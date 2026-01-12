@@ -37,7 +37,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: 'Permissions-Policy',
-            value: 'publickey-credentials-create=*',
+            value: 'publickey-credentials-create=*,interest-cohort=()',
           },
         ],
       },
