@@ -70,27 +70,29 @@ export default function LoginPage() {
     
     // Prompt to create a passkey after sign-up
     try {
-       const publicKeyCredentialCreationOptions = {
-        challenge: new Uint8Array(32), // Should be generated on the server
-        rp: {
-          name: 'AttendSync',
-          id: window.location.hostname,
-        },
-        user: {
-          id: new TextEncoder().encode(user.uid),
-          name: user.email!,
-          displayName: user.displayName!,
-        },
-        pubKeyCredParams: [{alg: -7, type: 'public-key' as const}],
-        authenticatorSelection: {
-          authenticatorAttachment: 'platform' as const,
-          userVerification: 'required' as const,
-        },
-        timeout: 60000,
-        attestation: 'direct' as const,
+       const publicKeyCredentialCreationOptions: CredentialCreationOptions = {
+        publicKey: {
+          challenge: new Uint8Array(32), // Should be generated on the server
+          rp: {
+            name: 'AttendSync',
+            id: window.location.hostname,
+          },
+          user: {
+            id: new TextEncoder().encode(user.uid),
+            name: user.email!,
+            displayName: user.displayName!,
+          },
+          pubKeyCredParams: [{alg: -7, type: 'public-key' as const}],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform' as const,
+            userVerification: 'required' as const,
+          },
+          timeout: 60000,
+          attestation: 'direct' as const,
+        }
       };
       
-      const credential = await navigator.credentials.create({ publicKey: publicKeyCredentialCreationOptions });
+      const credential = await navigator.credentials.create(publicKeyCredentialCreationOptions);
       const firebaseCredential = PublicKeyCredential.fromJSON(credential as any);
       await linkWithCredential(user, firebaseCredential);
 
