@@ -141,7 +141,7 @@ export function StudentView({
         description: "The attendance session has ended.",
       });
       setSignInStep('error');
-      setTimeout(() => setSignInStep('idle'), 5000);
+      setTimeout(() => setSignInStep('idle'), 3000);
       return;
     }
 
@@ -150,12 +150,12 @@ export function StudentView({
     if (!('geolocation' in navigator)) {
         toast({ variant: "destructive", title: "Location Error", description: "Geolocation is not supported by your browser." });
         setSignInStep('error');
-        setTimeout(() => setSignInStep('idle'), 5000);
+        setTimeout(() => setSignInStep('idle'), 3000);
         return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
+      (position) => {
         const studentLocation: Location = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
@@ -170,29 +170,28 @@ export function StudentView({
                 description: `You are too far from the classroom. (Distance: ${Math.round(distance)}m)`,
             });
             setSignInStep('error');
-            setTimeout(() => setSignInStep('idle'), 5000);
+            setTimeout(() => setSignInStep('idle'), 3000);
             return;
         }
 
         setSignInStep('authenticating');
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        
-        const updatedStudent = onSignIn(selectedStudent.id, deviceId);
-        
-        if (updatedStudent) {
-            setStudentForReport(updatedStudent);
-            setSignInStep('success');
-            setShowReport(true);
-        } else {
-            // onSignIn shows toasts for specific errors like session expired,
-            // so we only need to handle the generic failure case.
-            if(signInStep !== 'success') { // prevent flicker if already handled
+        // Artificial delay to simulate authentication
+        setTimeout(() => {
+          const updatedStudent = onSignIn(selectedStudent.id, deviceId);
+          
+          if (updatedStudent) {
+              setStudentForReport(updatedStudent);
+              setSignInStep('success');
+              setShowReport(true);
+          } else {
+              // onSignIn shows specific toasts (e.g. "already signed in").
+              // If it returns null for other reasons, show a generic failure.
               setSignInStep('error');
-            }
-        }
-    
-        setTimeout(() => setSignInStep('idle'), 5000);
+          }
+      
+          setTimeout(() => setSignInStep('idle'), 3000);
 
+        }, 1500);
       },
       (error) => {
         toast({
@@ -201,7 +200,7 @@ export function StudentView({
             description: `Could not get your location: ${error.message}`,
         });
         setSignInStep('error');
-        setTimeout(() => setSignInStep('idle'), 5000);
+        setTimeout(() => setSignInStep('idle'), 3000);
       }
     );
   };

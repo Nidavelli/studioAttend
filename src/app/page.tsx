@@ -100,7 +100,9 @@ export default function Home() {
             title: "Already Signed In",
             description: "You have already signed in for this session.",
         });
-        const currentStudent = course.students.find(s => s.id === studentId);
+        // On second sign-in, we know they are signed in, so we can find their updated record.
+        const currentCourse = courses.find(c => c.id === selectedCourseId);
+        const currentStudent = currentCourse?.students.find(s => s.id === studentId);
         return currentStudent || null;
     }
 
@@ -117,7 +119,7 @@ export default function Home() {
     setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
     setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
     
-    let updatedStudent: Student | null = null;
+    let finalUpdatedStudent: Student | null = null;
     
     setCourses(currentCourses => {
       const newCourses = currentCourses.map(c => {
@@ -127,8 +129,8 @@ export default function Home() {
               const totalWeeks = Object.keys(s.attendance).length;
               const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
               const newAttendance = { ...s.attendance, [nextWeek]: true };
-              updatedStudent = { ...s, attendance: newAttendance };
-              return updatedStudent;
+              finalUpdatedStudent = { ...s, attendance: newAttendance };
+              return finalUpdatedStudent;
             }
             return s;
           });
@@ -139,31 +141,7 @@ export default function Home() {
       return newCourses;
     });
 
-    // This is the key change. We now derive the updated student from the state update logic itself.
-    // However, since `setCourses` is async, we can't rely on `updatedStudent` immediately.
-    // Instead, we find the student from the current course data, assuming the update will be applied.
-    // The issue is that the `courses` object here is stale.
-    // The best way is to construct the new state, and find the student from there.
-
-    const newCourses = courses.map(c => {
-        if (c.id === selectedCourseId) {
-            const updatedStudents = c.students.map(s => {
-                if (s.id === studentId) {
-                    const totalWeeks = Object.keys(s.attendance).length;
-                    const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
-                    const newAttendance = { ...s.attendance, [nextWeek]: true };
-                    return { ...s, attendance: newAttendance };
-                }
-                return s;
-            });
-            return { ...c, students: updatedStudents };
-        }
-        return c;
-    });
-    const updatedCourse = newCourses.find(c => c.id === selectedCourseId);
-    const finalUpdatedStudent = updatedCourse?.students.find(s => s.id === studentId);
-
-    return finalUpdatedStudent || null;
+    return finalUpdatedStudent;
   };
 
 
@@ -277,5 +255,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
