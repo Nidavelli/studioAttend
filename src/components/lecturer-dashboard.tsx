@@ -1,7 +1,6 @@
 "use client";
 
 import React from 'react';
-import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,12 +15,6 @@ import { MapPin, AlertTriangle, Target } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-
-const LecturerMap = dynamic(() => import('@/components/lecturer-map').then(mod => mod.LecturerMap), { 
-  ssr: false,
-  loading: () => <div className="aspect-video w-full rounded-md bg-muted animate-pulse" />
-});
-
 
 export function LecturerDashboard({
   students,
@@ -76,9 +69,6 @@ export function LecturerDashboard({
               <Separator className="my-2"/>
               <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
                 <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
-                <div className="aspect-video w-full rounded-md overflow-hidden border border-border mt-2">
-                   <LecturerMap location={lecturerLocation} radius={sessionRadius} />
-                </div>
                 <div className="flex items-center justify-center gap-2 text-xs pt-2">
                   <Target className="h-3 w-3"/>
                   <span className="font-mono">{sessionRadius}m Radius</span>
