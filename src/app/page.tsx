@@ -79,16 +79,19 @@ export default function Home() {
 
   const handleSignIn = (studentId: string, deviceId: string): Student | null => {
     if (sessionEndTime && new Date() > sessionEndTime) {
-      toast({
-        variant: "destructive",
-        title: "Session Expired",
-        description: "The attendance session has ended.",
-      });
-      setSessionActive(false);
-      return null;
+        toast({
+            variant: "destructive",
+            title: "Session Expired",
+            description: "The attendance session has ended.",
+        });
+        setSessionActive(false);
+        return null;
     }
+
+    const course = courses.find(c => c.id === selectedCourseId);
+    if (!course) return null;
     
-    const student = selectedCourse.students.find((s) => s.id === studentId);
+    const student = course.students.find((s) => s.id === studentId);
     if (!student) return null;
 
     if (signedInStudents.some((s) => s.id === studentId)) {
@@ -97,7 +100,7 @@ export default function Home() {
             title: "Already Signed In",
             description: "You have already signed in for this session.",
         });
-        const currentStudent = selectedCourse.students.find(s => s.id === studentId);
+        const currentStudent = course.students.find(s => s.id === studentId);
         return currentStudent || null;
     }
 
@@ -114,23 +117,29 @@ export default function Home() {
     setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
     setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
     
-    let updatedStudent: Student | null = null;
-    setCourses(currentCourses => currentCourses.map(course => {
-      if (course.id === selectedCourseId) {
-        const updatedStudents = course.students.map(s => {
-          if (s.id === studentId) {
-            const totalWeeks = Object.keys(s.attendance).length;
-            const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
-            updatedStudent = { ...s, attendance: { ...s.attendance, [nextWeek]: true } };
-            return updatedStudent;
-          }
-          return s;
+    let updatedStudentState: Student | null = null;
+
+    setCourses(currentCourses => {
+        const newCourses = currentCourses.map(c => {
+            if (c.id === selectedCourseId) {
+                const updatedStudents = c.students.map(s => {
+                    if (s.id === studentId) {
+                        const totalWeeks = Object.keys(s.attendance).length;
+                        const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
+                        const updatedStudent = { ...s, attendance: { ...s.attendance, [nextWeek]: true } };
+                        updatedStudentState = updatedStudent;
+                        return updatedStudent;
+                    }
+                    return s;
+                });
+                return { ...c, students: updatedStudents };
+            }
+            return c;
         });
-        return { ...course, students: updatedStudents };
-      }
-      return course;
-    }));
-    return updatedStudent;
+        return newCourses;
+    });
+
+    return updatedStudentState;
   };
 
   const handleManualAttendanceToggle = (studentId: string, week: string) => {
@@ -243,3 +252,5 @@ export default function Home() {
     </div>
   );
 }
+
+    

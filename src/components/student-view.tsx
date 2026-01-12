@@ -182,8 +182,8 @@ export function StudentView({
             setSignInStep('success');
             setShowSheet(true);
         } else {
-            // Handle case where sign-in failed (e.g., already signed in)
-            // onSignIn would have already shown a toast if session expired.
+            // onSignIn shows toasts for specific errors like already signed in
+            // so we only need to handle the generic failure case.
             setSignInStep('error');
         }
     
@@ -274,3 +274,5 @@ export function StudentView({
     </div>
   );
 }
+
+    
