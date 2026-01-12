@@ -1,11 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   User,
 } from 'firebase/auth';
 import { useAuth } from '@/firebase/provider';
@@ -19,6 +21,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from '@/hooks/use-toast';
 import { AttendSyncIcon } from '@/components/icons';
 
@@ -28,8 +31,14 @@ export default function LoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const [email, setEmail] = React.useState('');
-  const [password, setPassword] = React.useState('');
+  
+  const [signInEmail, setSignInEmail] = useState('');
+  const [signInPassword, setSignInPassword] = useState('');
+
+  const [signUpName, setSignUpName] = useState('');
+  const [signUpEmail, setSignUpEmail] = useState('');
+  const [signUpPassword, setSignUpPassword] = useState('');
+
 
   const handleLoginSuccess = (user: User) => {
     toast({
@@ -39,10 +48,18 @@ export default function LoginPage() {
     router.push('/');
   };
 
-  const handleLoginError = (error: any) => {
+  const handleSignUpSuccess = (user: User) => {
+    toast({
+      title: 'Sign Up Successful',
+      description: `Welcome, ${user.displayName || user.email}!`,
+    });
+    router.push('/');
+  };
+
+  const handleAuthError = (error: any) => {
     toast({
       variant: 'destructive',
-      title: 'Login Failed',
+      title: 'Authentication Failed',
       description: error.message || 'An unexpected error occurred.',
     });
   };
@@ -52,19 +69,33 @@ export default function LoginPage() {
       const result = await signInWithPopup(auth, provider);
       handleLoginSuccess(result.user);
     } catch (error) {
-      handleLoginError(error);
+      handleAuthError(error);
     }
   };
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
+      const result = await signInWithEmailAndPassword(auth, signInEmail, signInPassword);
       handleLoginSuccess(result.user);
     } catch (error) {
-      handleLoginError(error);
+      handleAuthError(error);
     }
   };
+
+  const handleEmailSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const result = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
+      await updateProfile(result.user, { displayName: signUpName });
+      // Reload user to get the updated profile
+      await result.user.reload();
+      handleSignUpSuccess(result.user);
+    } catch (error) {
+      handleAuthError(error);
+    }
+  };
+
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -76,9 +107,9 @@ export default function LoginPage() {
                 AttendSync
              </h1>
           </div>
-          <CardTitle className="font-headline">Sign In</CardTitle>
+          <CardTitle className="font-headline">Welcome</CardTitle>
           <CardDescription>
-            Choose a method to sign into your account
+            Sign in or create an account to continue
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -119,32 +150,80 @@ export default function LoginPage() {
                 </span>
               </div>
             </div>
-            <form onSubmit={handleEmailSignIn} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <Button type="submit" className="w-full">
-                Sign In with Email
-              </Button>
-            </form>
+
+            <Tabs defaultValue="signin" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="signin">Sign In</TabsTrigger>
+                <TabsTrigger value="signup">Sign Up</TabsTrigger>
+              </TabsList>
+              <TabsContent value="signin">
+                <form onSubmit={handleEmailSignIn} className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email-signin">Email</Label>
+                    <Input
+                      id="email-signin"
+                      type="email"
+                      placeholder="m@example.com"
+                      required
+                      value={signInEmail}
+                      onChange={(e) => setSignInEmail(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password-signin">Password</Label>
+                    <Input
+                      id="password-signin"
+                      type="password"
+                      required
+                      value={signInPassword}
+                      onChange={(e) => setSignInPassword(e.target.value)}
+                    />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    Sign In
+                  </Button>
+                </form>
+              </TabsContent>
+              <TabsContent value="signup">
+                <form onSubmit={handleEmailSignUp} className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name-signup">Full Name</Label>
+                    <Input
+                      id="name-signup"
+                      type="text"
+                      placeholder="John Doe"
+                      required
+                      value={signUpName}
+                      onChange={(e) => setSignUpName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email-signup">Email</Label>
+                    <Input
+                      id="email-signup"
+                      type="email"
+                      placeholder="m@example.com"
+                      required
+                      value={signUpEmail}
+                      onChange={(e) => setSignUpEmail(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password-signup">Password</Label>
+                    <Input
+                      id="password-signup"
+                      type="password"
+                      required
+                      value={signUpPassword}
+                      onChange={(e) => setSignUpPassword(e.target.value)}
+                    />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    Create Account
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
           </div>
         </CardContent>
       </Card>
