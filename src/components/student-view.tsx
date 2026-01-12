@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -98,6 +99,7 @@ export function StudentView({
   courseName: string;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
   const [showSheet, setShowSheet] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -108,7 +110,13 @@ export function StudentView({
     setDeviceId(generateSimpleId());
     // Reset student selection when course changes
     setSelectedStudentId(null);
+    setCurrentStudent(null);
   }, [students]);
+  
+  const handleStudentSelect = (studentId: string) => {
+    setSelectedStudentId(studentId);
+    setCurrentStudent(students.find(s => s.id === studentId) ?? null);
+  }
 
   const selectedStudent = useMemo(
     () => students.find((s) => s.id === selectedStudentId),
@@ -169,6 +177,16 @@ export function StudentView({
         await new Promise((resolve) => setTimeout(resolve, 1500));
         
         onSignIn(selectedStudent.id, deviceId);
+        
+        // Update local student state for immediate feedback in the dialog
+        setCurrentStudent(prevStudent => {
+          if (!prevStudent) return null;
+          const totalWeeks = Object.keys(prevStudent.attendance).length;
+          const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(prevStudent.attendance).map(Number)) : 0) + 1;
+          const newAttendance = { ...prevStudent.attendance, [nextWeek]: true };
+          return { ...prevStudent, attendance: newAttendance };
+        });
+
         setSignInStep('success');
         setShowSheet(true);
     
@@ -209,7 +227,7 @@ export function StudentView({
           <CardDescription className="text-center">Select your name to sign in for today's class.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
-          <Select onValueChange={setSelectedStudentId} value={selectedStudentId || ''} disabled={!isSessionActive}>
+          <Select onValueChange={handleStudentSelect} value={selectedStudentId || ''} disabled={!isSessionActive}>
             <SelectTrigger>
               <SelectValue placeholder="Select your name" />
             </SelectTrigger>
@@ -253,7 +271,7 @@ export function StudentView({
               Your sign-in was successful. Here is your current attendance record for {courseName}.
             </DialogDescription>
           </DialogHeader>
-          {selectedStudent && <StudentAttendanceReport student={selectedStudent} courseName={courseName} />}
+          {currentStudent && <StudentAttendanceReport student={currentStudent} courseName={courseName} />}
         </DialogContent>
       </Dialog>
     </div>
