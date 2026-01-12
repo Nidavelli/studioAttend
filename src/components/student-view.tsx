@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle, Timer } from 'lucide-react';
+import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle, Timer, ShieldCheck } from 'lucide-react';
 import type { Student } from '@/lib/data';
 import { findImage } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
@@ -23,13 +23,14 @@ import { StudentAttendanceReport } from './student-attendance-report';
 import { generateSimpleId } from '@/lib/utils';
 
 
-type SignInStep = 'idle' | 'locating' | 'authenticating' | 'success' | 'error';
+type SignInStep = 'idle' | 'locating' | 'biometric' | 'recording' | 'success' | 'error';
 
 const stepMessages: Record<SignInStep, { text: string; icon: React.ReactNode }> = {
   idle: { text: 'Sign In', icon: null },
   locating: { text: 'Verifying Location...', icon: <MapPin className="animate-pulse" /> },
-  authenticating: { text: 'Authenticating Device...', icon: <Fingerprint className="animate-pulse" /> },
-  success: { text: 'Signed In', icon: <CheckCircle /> },
+  biometric: { text: 'Waiting for Biometric Scan...', icon: <Fingerprint className="animate-pulse" /> },
+  recording: { text: 'Recording Attendance...', icon: <ShieldCheck className="animate-pulse" /> },
+  success: { text: 'Signed In Successfully', icon: <CheckCircle /> },
   error: { text: 'Sign In Failed', icon: <XCircle /> },
 };
 
@@ -123,6 +124,74 @@ export function StudentView({
     () => students.find((s) => s.id === selectedStudentId),
     [selectedStudentId, students]
   );
+  
+  const resetSignIn = (delay = 3000) => {
+    setTimeout(() => setSignInStep('idle'), delay);
+  };
+
+  const handleBiometricAuth = async () => {
+    setSignInStep('biometric');
+    try {
+        const isSupported = await (window.PublicKeyCredential as any)?.isUserVerifyingPlatformAuthenticatorAvailable?.();
+        if (!isSupported) {
+            toast({
+                variant: "destructive",
+                title: "Biometrics Not Supported",
+                description: "Your device or browser does not support biometric authentication.",
+            });
+            setSignInStep('error');
+            resetSignIn();
+            return;
+        }
+
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+
+        const credential = await navigator.credentials.create({
+            publicKey: {
+                challenge,
+                rp: { name: "AttendSync" },
+                user: {
+                    id: new TextEncoder().encode(selectedStudent!.id),
+                    name: selectedStudent!.name,
+                    displayName: selectedStudent!.name,
+                },
+                pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+                authenticatorSelection: {
+                    authenticatorAttachment: "platform",
+                    userVerification: "required",
+                },
+                timeout: 60000,
+            }
+        });
+
+        if (credential) {
+            setSignInStep('recording');
+            // Artificial delay to give user feedback
+             setTimeout(() => {
+                const updatedStudent = onSignIn(selectedStudent!.id, deviceId!);
+                if (updatedStudent) {
+                  setSignInStep('success');
+                } else {
+                  // This case handles the "already signed in" toast from the parent
+                  setSignInStep('error');
+                }
+                resetSignIn();
+            }, 1000);
+        } else {
+            throw new Error("Biometric authentication failed or was canceled.");
+        }
+    } catch (error: any) {
+        console.error("Biometric Error:", error);
+        toast({
+            variant: "destructive",
+            title: "Biometric Failed",
+            description: error.name === 'NotAllowedError' ? 'Authentication was canceled.' : 'Could not verify your identity.',
+        });
+        setSignInStep('error');
+        resetSignIn();
+    }
+  };
 
   const handleSignIn = async () => {
     if (!selectedStudent || !lecturerLocation || !deviceId) {
@@ -141,7 +210,7 @@ export function StudentView({
         description: "The attendance session has ended.",
       });
       setSignInStep('error');
-      setTimeout(() => setSignInStep('idle'), 3000);
+      resetSignIn();
       return;
     }
 
@@ -150,7 +219,7 @@ export function StudentView({
     if (!('geolocation' in navigator)) {
         toast({ variant: "destructive", title: "Location Error", description: "Geolocation is not supported by your browser." });
         setSignInStep('error');
-        setTimeout(() => setSignInStep('idle'), 3000);
+        resetSignIn();
         return;
     }
 
@@ -170,24 +239,12 @@ export function StudentView({
                 description: `You are too far from the classroom. (Distance: ${Math.round(distance)}m)`,
             });
             setSignInStep('error');
-            setTimeout(() => setSignInStep('idle'), 3000);
+            resetSignIn();
             return;
         }
 
-        setSignInStep('authenticating');
-        // Artificial delay to simulate authentication
-        setTimeout(() => {
-          const updatedStudent = onSignIn(selectedStudent.id, deviceId);
-          
-          if (updatedStudent) {
-              setSignInStep('success');
-          } else {
-              setSignInStep('error');
-          }
-      
-          setTimeout(() => setSignInStep('idle'), 3000);
-
-        }, 1500);
+        // Location is verified, now proceed to biometrics
+        handleBiometricAuth();
       },
       (error) => {
         toast({
@@ -196,7 +253,7 @@ export function StudentView({
             description: `Could not get your location: ${error.message}`,
         });
         setSignInStep('error');
-        setTimeout(() => setSignInStep('idle'), 3000);
+        resetSignIn();
       }
     );
   };
@@ -273,3 +330,5 @@ export function StudentView({
     </div>
   );
 }
+
+    
