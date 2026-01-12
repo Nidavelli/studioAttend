@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -11,10 +11,40 @@ import type { SignedInStudent, Location } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { MapPin, AlertTriangle, Target } from 'lucide-react';
+import { MapPin, AlertTriangle, Target, Timer } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+const CountdownTimer = ({ endTime }: { endTime: Date }) => {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      const difference = endTime.getTime() - now.getTime();
+
+      if (difference > 0) {
+        const minutes = Math.floor((difference / 1000 / 60) % 60);
+        const seconds = Math.floor((difference / 1000) % 60);
+        setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+      } else {
+        setTimeLeft('00:00');
+        clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [endTime]);
+
+  return (
+      <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
+        <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><Timer className="h-4 w-4"/> Time Remaining</h4>
+        <div className="text-2xl font-mono font-bold tracking-widest">{timeLeft}</div>
+      </div>
+  );
+};
+
 
 export function LecturerDashboard({
   students,
@@ -25,6 +55,9 @@ export function LecturerDashboard({
   lecturerLocation,
   sessionRadius,
   setSessionRadius,
+  sessionDuration,
+  setSessionDuration,
+  sessionEndTime,
 }: {
   students: Student[];
   signedInStudents: SignedInStudent[];
@@ -34,7 +67,11 @@ export function LecturerDashboard({
   lecturerLocation: Location | null;
   sessionRadius: number;
   setSessionRadius: (radius: number) => void;
+  sessionDuration: number;
+  setSessionDuration: (duration: number) => void;
+  sessionEndTime: Date | null;
 }) {
+
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
       <Card className="lg:col-span-1">
@@ -43,19 +80,32 @@ export function LecturerDashboard({
           <CardDescription>Start or end the attendance session.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
-          <div className="w-full space-y-2">
-            <Label htmlFor="radius">Session Radius (meters)</Label>
-            <Input 
-              id="radius" 
-              type="number"
-              value={sessionRadius}
-              onChange={(e) => setSessionRadius(Number(e.target.value))}
-              placeholder="e.g. 100"
-              disabled={isSessionActive}
-            />
+          <div className="w-full grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="radius">Radius (m)</Label>
+              <Input 
+                id="radius" 
+                type="number"
+                value={sessionRadius}
+                onChange={(e) => setSessionRadius(Number(e.target.value))}
+                placeholder="e.g. 100"
+                disabled={isSessionActive}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="duration">Duration (min)</Label>
+              <Input 
+                id="duration" 
+                type="number"
+                value={sessionDuration}
+                onChange={(e) => setSessionDuration(Number(e.target.value))}
+                placeholder="e.g. 15"
+                disabled={isSessionActive}
+              />
+            </div>
           </div>
-
-          <div className="flex items-center gap-2">
+          
+          <div className="flex items-center gap-2 pt-2">
             <span className={`h-3 w-3 rounded-full ${isSessionActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
             <span className="font-medium">{isSessionActive ? 'Session Active' : 'Session Inactive'}</span>
           </div>
@@ -64,18 +114,22 @@ export function LecturerDashboard({
             {isSessionActive ? 'End Session' : 'Start Session'}
           </Button>
 
-          {isSessionActive && lecturerLocation && (
+          {isSessionActive && (
             <>
               <Separator className="my-2"/>
-              <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
-                <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
-                <div className="flex items-center justify-center gap-2 text-xs pt-2">
-                  <Target className="h-3 w-3"/>
-                  <span className="font-mono">{sessionRadius}m Radius</span>
+              {lecturerLocation && (
+                <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
+                  <div className="flex items-center justify-center gap-2 text-xs pt-2">
+                    <Target className="h-3 w-3"/>
+                    <span className="font-mono">{sessionRadius}m Radius</span>
+                  </div>
                 </div>
-              </div>
+              )}
+               {sessionEndTime && <CountdownTimer endTime={sessionEndTime} />}
             </>
           )}
+
         </CardContent>
       </Card>
       

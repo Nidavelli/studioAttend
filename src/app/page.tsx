@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from '@/components/header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StudentView } from '@/components/student-view';
@@ -30,9 +30,38 @@ export default function Home() {
   const [lecturerLocation, setLecturerLocation] = useState<Location | null>(null);
   const [sessionRadius, setSessionRadius] = useState<number>(100);
   const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
+  const [sessionDuration, setSessionDuration] = useState<number>(15);
+  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
   const { toast } = useToast();
 
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (sessionActive && sessionEndTime) {
+      interval = setInterval(() => {
+        if (new Date() > sessionEndTime) {
+          setSessionActive(false);
+          setSessionEndTime(null);
+          toast({
+            title: "Session Ended",
+            description: "The attendance session has automatically ended.",
+          });
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [sessionActive, sessionEndTime, toast]);
+
+
   const handleSignIn = (studentId: string, deviceId: string) => {
+    if (sessionEndTime && new Date() > sessionEndTime) {
+      toast({
+        variant: "destructive",
+        title: "Session Expired",
+        description: "The attendance session has ended.",
+      });
+      setSessionActive(false);
+      return;
+    }
     const student = students.find((s) => s.id === studentId);
     if (student && !signedInStudents.some((s) => s.id === studentId)) {
       const isDuplicate = usedDeviceIds.has(deviceId);
@@ -78,6 +107,7 @@ export default function Home() {
       setSignedInStudents([]);
       setLecturerLocation(null);
       setUsedDeviceIds(new Set());
+      setSessionEndTime(null);
     } else {
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
@@ -86,6 +116,8 @@ export default function Home() {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
             });
+            const endTime = new Date(new Date().getTime() + sessionDuration * 60000);
+            setSessionEndTime(endTime);
             setSessionActive(true);
           },
           (error) => {
@@ -122,6 +154,7 @@ export default function Home() {
               isSessionActive={sessionActive}
               lecturerLocation={lecturerLocation}
               sessionRadius={sessionRadius}
+              sessionEndTime={sessionEndTime}
             />
           </TabsContent>
           <TabsContent value="lecturer">
@@ -134,6 +167,9 @@ export default function Home() {
               lecturerLocation={lecturerLocation}
               sessionRadius={sessionRadius}
               setSessionRadius={setSessionRadius}
+              sessionDuration={sessionDuration}
+              setSessionDuration={setSessionDuration}
+              sessionEndTime={sessionEndTime}
             />
           </TabsContent>
         </Tabs>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Select,
   SelectContent,
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle, Timer } from 'lucide-react';
 import type { Student } from '@/lib/data';
 import { findImage, COURSE_NAME } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
@@ -48,6 +48,37 @@ function getDistance(loc1: Location, loc2: Location) {
   return R * c;
 }
 
+const CountdownTimer = ({ endTime }: { endTime: Date }) => {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      const difference = endTime.getTime() - now.getTime();
+
+      if (difference > 0) {
+        const minutes = Math.floor((difference / 1000 / 60) % 60);
+        const seconds = Math.floor((difference / 1000) % 60);
+        setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+      } else {
+        setTimeLeft('00:00');
+        clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [endTime]);
+
+  if (!timeLeft || timeLeft === '00:00') return null;
+
+  return (
+    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground font-medium">
+      <Timer className="h-4 w-4" />
+      <span>Session ends in: <span className="font-mono font-bold">{timeLeft}</span></span>
+    </div>
+  );
+};
+
 
 export function StudentView({
   students,
@@ -55,12 +86,14 @@ export function StudentView({
   isSessionActive,
   lecturerLocation,
   sessionRadius,
+  sessionEndTime,
 }: {
   students: Student[];
   onSignIn: (studentId: string, deviceId: string) => void;
   isSessionActive: boolean;
   lecturerLocation: Location | null;
   sessionRadius: number;
+  sessionEndTime: Date | null;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
@@ -86,6 +119,17 @@ export function StudentView({
             description: "Session not active or device not ready.",
         });
         return;
+    }
+    
+    if (sessionEndTime && new Date() > sessionEndTime) {
+      toast({
+        variant: "destructive",
+        title: "Session Expired",
+        description: "The attendance session has ended.",
+      });
+      setSignInStep('error');
+      setTimeout(() => setSignInStep('idle'), 5000);
+      return;
     }
 
     setSignInStep('locating');
@@ -143,14 +187,17 @@ export function StudentView({
 
   return (
     <div className="mt-8 flex flex-col items-center gap-8">
-      {!isSessionActive && (
+      {!isSessionActive ? (
         <Alert variant="destructive" className="max-w-md">
           <AlertTitle>No Active Session</AlertTitle>
           <AlertDescription>
             The lecturer has not started an attendance session. Please wait.
           </AlertDescription>
         </Alert>
+      ) : (
+        sessionEndTime && <CountdownTimer endTime={sessionEndTime} />
       )}
+
 
       <Card className="w-full max-w-md">
         <CardHeader>
