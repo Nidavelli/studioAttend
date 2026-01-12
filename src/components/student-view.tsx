@@ -153,10 +153,10 @@ export function StudentView({
                 rp: { name: "AttendSync" },
                 user: {
                     id: new TextEncoder().encode(selectedStudent!.id),
-                    name: selectedStudent!.name,
+                    name: selectedStudent!.email,
                     displayName: selectedStudent!.name,
                 },
-                pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+                pubKeyCredParams: [{ type: "public-key", alg: -7 }], // ES256
                 authenticatorSelection: {
                     authenticatorAttachment: "platform",
                     userVerification: "required",
@@ -330,5 +330,7 @@ export function StudentView({
     </div>
   );
 }
+
+    
 
     
