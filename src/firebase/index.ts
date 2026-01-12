@@ -1,12 +1,14 @@
+'use client';
+
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 import { firebaseApp } from './config';
 
-export const initializeFirebase = () => {
-  const auth = getAuth(firebaseApp);
-  const firestore = getFirestore(firebaseApp);
+const auth = getAuth(firebaseApp);
+const firestore = getFirestore(firebaseApp);
 
+export const initializeFirebase = () => {
   return { firebaseApp, auth, firestore };
 };
 
