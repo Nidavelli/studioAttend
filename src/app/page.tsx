@@ -89,39 +89,48 @@ export default function Home() {
     }
     
     const student = selectedCourse.students.find((s) => s.id === studentId);
-    if (student && !signedInStudents.some((s) => s.id === studentId)) {
-      const isDuplicate = usedDeviceIds.has(deviceId);
+    if (!student) return null;
 
-      const newSignedInStudent: SignedInStudent = {
-        id: student.id,
-        name: student.name,
-        avatarId: student.avatarId,
-        signedInAt: new Date().toLocaleTimeString(),
-        isDuplicateDevice: isDuplicate,
-      };
-
-      setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
-      setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
-      
-      let updatedStudent: Student | null = null;
-      setCourses(currentCourses => currentCourses.map(course => {
-        if (course.id === selectedCourseId) {
-          const updatedStudents = course.students.map(s => {
-            if (s.id === studentId) {
-              const totalWeeks = Object.keys(s.attendance).length;
-              const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
-              updatedStudent = { ...s, attendance: { ...s.attendance, [nextWeek]: true } };
-              return updatedStudent;
-            }
-            return s;
-          });
-          return { ...course, students: updatedStudents };
-        }
-        return course;
-      }));
-      return updatedStudent;
+    if (signedInStudents.some((s) => s.id === studentId)) {
+        toast({
+            variant: "destructive",
+            title: "Already Signed In",
+            description: "You have already signed in for this session.",
+        });
+        const currentStudent = selectedCourse.students.find(s => s.id === studentId);
+        return currentStudent || null;
     }
-    return null;
+
+    const isDuplicate = usedDeviceIds.has(deviceId);
+
+    const newSignedInStudent: SignedInStudent = {
+      id: student.id,
+      name: student.name,
+      avatarId: student.avatarId,
+      signedInAt: new Date().toLocaleTimeString(),
+      isDuplicateDevice: isDuplicate,
+    };
+
+    setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
+    setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
+    
+    let updatedStudent: Student | null = null;
+    setCourses(currentCourses => currentCourses.map(course => {
+      if (course.id === selectedCourseId) {
+        const updatedStudents = course.students.map(s => {
+          if (s.id === studentId) {
+            const totalWeeks = Object.keys(s.attendance).length;
+            const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
+            updatedStudent = { ...s, attendance: { ...s.attendance, [nextWeek]: true } };
+            return updatedStudent;
+          }
+          return s;
+        });
+        return { ...course, students: updatedStudents };
+      }
+      return course;
+    }));
+    return updatedStudent;
   };
 
   const handleManualAttendanceToggle = (studentId: string, week: string) => {
