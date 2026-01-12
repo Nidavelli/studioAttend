@@ -70,10 +70,17 @@ export function LecturerDashboard({
               <Separator className="my-2"/>
               <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
                 <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
-                <p className="text-xs text-muted-foreground font-mono">
-                  Lat: {lecturerLocation.latitude.toFixed(5)}, Lon: {lecturerLocation.longitude.toFixed(5)}
-                </p>
-                <div className="flex items-center justify-center gap-2 text-xs">
+                <div className="aspect-video w-full rounded-md overflow-hidden border border-border mt-2">
+                   <iframe
+                    width="100%"
+                    height="100%"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                    allowFullScreen
+                    src={`https://www.google.com/maps/embed/v1/view?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&center=${lecturerLocation.latitude},${lecturerLocation.longitude}&zoom=17&maptype=roadmap`}
+                  ></iframe>
+                </div>
+                <div className="flex items-center justify-center gap-2 text-xs pt-2">
                   <Target className="h-3 w-3"/>
                   <span className="font-mono">{sessionRadius}m Radius</span>
                 </div>
