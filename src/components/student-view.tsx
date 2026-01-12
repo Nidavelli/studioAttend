@@ -91,7 +91,7 @@ export function StudentView({
   courseName,
 }: {
   students: Student[];
-  onSignIn: (studentId: string, deviceId: string) => void;
+  onSignIn: (studentId: string, deviceId: string) => Student | null;
   isSessionActive: boolean;
   lecturerLocation: Location | null;
   sessionRadius: number;
@@ -99,7 +99,7 @@ export function StudentView({
   courseName: string;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
+  const [studentForReport, setStudentForReport] = useState<Student | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
   const [showSheet, setShowSheet] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -110,12 +110,11 @@ export function StudentView({
     setDeviceId(generateSimpleId());
     // Reset student selection when course changes
     setSelectedStudentId(null);
-    setCurrentStudent(null);
+    setStudentForReport(null);
   }, [students]);
   
   const handleStudentSelect = (studentId: string) => {
     setSelectedStudentId(studentId);
-    setCurrentStudent(students.find(s => s.id === studentId) ?? null);
   }
 
   const selectedStudent = useMemo(
@@ -176,19 +175,17 @@ export function StudentView({
         setSignInStep('authenticating');
         await new Promise((resolve) => setTimeout(resolve, 1500));
         
-        onSignIn(selectedStudent.id, deviceId);
+        const updatedStudent = onSignIn(selectedStudent.id, deviceId);
         
-        // Update local student state for immediate feedback in the dialog
-        setCurrentStudent(prevStudent => {
-          if (!prevStudent) return null;
-          const totalWeeks = Object.keys(prevStudent.attendance).length;
-          const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(prevStudent.attendance).map(Number)) : 0) + 1;
-          const newAttendance = { ...prevStudent.attendance, [nextWeek]: true };
-          return { ...prevStudent, attendance: newAttendance };
-        });
-
-        setSignInStep('success');
-        setShowSheet(true);
+        if (updatedStudent) {
+            setStudentForReport(updatedStudent);
+            setSignInStep('success');
+            setShowSheet(true);
+        } else {
+            // Handle case where sign-in failed (e.g., already signed in)
+            // onSignIn would have already shown a toast if session expired.
+            setSignInStep('error');
+        }
     
         setTimeout(() => setSignInStep('idle'), 5000);
 
@@ -271,7 +268,7 @@ export function StudentView({
               Your sign-in was successful. Here is your current attendance record for {courseName}.
             </DialogDescription>
           </DialogHeader>
-          {currentStudent && <StudentAttendanceReport student={currentStudent} courseName={courseName} />}
+          {studentForReport && <StudentAttendanceReport student={studentForReport} courseName={courseName} />}
         </DialogContent>
       </Dialog>
     </div>

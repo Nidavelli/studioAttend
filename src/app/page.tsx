@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -76,7 +77,7 @@ export default function Home() {
     setSelectedCourseId(courseId);
   };
 
-  const handleSignIn = (studentId: string, deviceId: string) => {
+  const handleSignIn = (studentId: string, deviceId: string): Student | null => {
     if (sessionEndTime && new Date() > sessionEndTime) {
       toast({
         variant: "destructive",
@@ -84,7 +85,7 @@ export default function Home() {
         description: "The attendance session has ended.",
       });
       setSessionActive(false);
-      return;
+      return null;
     }
     
     const student = selectedCourse.students.find((s) => s.id === studentId);
@@ -102,13 +103,15 @@ export default function Home() {
       setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
       setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
       
+      let updatedStudent: Student | null = null;
       setCourses(currentCourses => currentCourses.map(course => {
         if (course.id === selectedCourseId) {
           const updatedStudents = course.students.map(s => {
             if (s.id === studentId) {
               const totalWeeks = Object.keys(s.attendance).length;
               const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
-              return { ...s, attendance: { ...s.attendance, [nextWeek]: true } };
+              updatedStudent = { ...s, attendance: { ...s.attendance, [nextWeek]: true } };
+              return updatedStudent;
             }
             return s;
           });
@@ -116,7 +119,9 @@ export default function Home() {
         }
         return course;
       }));
+      return updatedStudent;
     }
+    return null;
   };
 
   const handleManualAttendanceToggle = (studentId: string, week: string) => {
