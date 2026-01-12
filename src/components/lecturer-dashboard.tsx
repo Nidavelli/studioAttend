@@ -36,9 +36,10 @@ export function LecturerDashboard({
   sessionRadius: number;
   setSessionRadius: (radius: number) => void;
 }) {
-  const mapUrl = lecturerLocation 
-    ? `https://www.openstreetmap.org/export/embed.html?bbox=${lecturerLocation.longitude-0.005},${lecturerLocation.latitude-0.005},${lecturerLocation.longitude+0.005},${lecturerLocation.latitude+0.005}&layer=mapnik&marker=${lecturerLocation.latitude},${lecturerLocation.longitude}`
-    : '';
+  const getMapUrl = (location: Location | null) => {
+    if (!location) return '';
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${location.longitude-0.005},${location.latitude-0.005},${location.longitude+0.005},${location.latitude+0.005}&layer=mapnik&marker=${location.latitude},${location.longitude}`;
+  };
 
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
@@ -81,7 +82,7 @@ export function LecturerDashboard({
                     style={{ border: 0 }}
                     loading="lazy"
                     allowFullScreen
-                    src={mapUrl}
+                    src={getMapUrl(lecturerLocation)}
                   ></iframe>
                 </div>
                 <div className="flex items-center justify-center gap-2 text-xs pt-2">
