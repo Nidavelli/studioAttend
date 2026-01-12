@@ -10,6 +10,7 @@ import type { Student } from '@/lib/data';
 import type { SignedInStudent } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
+import { AttendanceReport } from '@/components/attendance-report';
 
 export function LecturerDashboard({
   students,
@@ -93,6 +94,16 @@ export function LecturerDashboard({
         </CardHeader>
         <CardContent>
           <AttendanceAnalytics students={students} />
+        </CardContent>
+      </Card>
+
+      <Card className="md:col-span-2 lg:col-span-3">
+        <CardHeader>
+          <CardTitle className="font-headline">Printable Attendance Report</CardTitle>
+          <CardDescription>Semester-wide attendance sheet for manual records and printing.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AttendanceReport students={students} />
         </CardContent>
       </Card>
     </div>
