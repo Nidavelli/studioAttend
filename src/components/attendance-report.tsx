@@ -8,7 +8,7 @@ import type { Student } from '@/lib/data';
 
 const TOTAL_WEEKS = 13;
 
-export function AttendanceReport({ students }: { students: Student[] }) {
+export function AttendanceReport({ students, onManualAttendanceToggle }: { students: Student[]; onManualAttendanceToggle: (studentId: string, week: string) => void; }) {
   
   const handlePrint = () => {
     const printContent = document.getElementById('printable-report');
@@ -28,12 +28,16 @@ export function AttendanceReport({ students }: { students: Student[] }) {
                 .no-print {
                   display: none;
                 }
+                .week-col {
+                  cursor: default !important;
+                }
               }
               body { font-family: sans-serif; }
               table { width: 100%; border-collapse: collapse; }
               th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
               th { background-color: #f2f2f2; }
               .week-col { text-align: center; }
+              .manual-toggle:hover { background-color: #f0f0f0; cursor: pointer; }
             </style>
           </head>
           <body>
@@ -51,7 +55,7 @@ export function AttendanceReport({ students }: { students: Student[] }) {
   return (
     <div>
       <div className="flex justify-end mb-4">
-        <Button onClick={handlePrint}>
+        <Button onClick={handlePrint} className="no-print">
           <Printer className="mr-2 h-4 w-4" />
           Print Report
         </Button>
@@ -80,7 +84,11 @@ export function AttendanceReport({ students }: { students: Student[] }) {
                     const week = (i + 1).toString();
                     const isPresent = student.attendance[week];
                     return (
-                      <TableCell key={`${student.id}-week-${week}`} className="week-col">
+                      <TableCell 
+                        key={`${student.id}-week-${week}`} 
+                        className="week-col manual-toggle"
+                        onClick={() => onManualAttendanceToggle(student.id, week)}
+                      >
                         {isPresent ? 'X' : ''}
                       </TableCell>
                     );

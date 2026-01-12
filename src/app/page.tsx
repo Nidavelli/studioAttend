@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import type { Student } from '@/lib/data';
-import { students } from '@/lib/data';
+import { students as initialStudents } from '@/lib/data';
 
 export type SignedInStudent = {
   id: string;
@@ -16,6 +16,7 @@ export type SignedInStudent = {
 };
 
 export default function Home() {
+  const [students, setStudents] = useState<Student[]>(initialStudents);
   const [sessionActive, setSessionActive] = useState(false);
   const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
 
@@ -30,10 +31,28 @@ export default function Home() {
       };
       setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
       
-      // Mark attendance for the current week (e.g., week 11)
-      const week = (Object.keys(student.attendance).length + 1).toString();
-      student.attendance[week] = true;
+      const updatedStudents = students.map(s => {
+        if (s.id === studentId) {
+          const week = (Object.keys(s.attendance).length + 1).toString();
+          return { ...s, attendance: { ...s.attendance, [week]: true } };
+        }
+        return s;
+      });
+      setStudents(updatedStudents);
     }
+  };
+
+  const handleManualAttendanceToggle = (studentId: string, week: string) => {
+    setStudents(currentStudents => 
+      currentStudents.map(student => {
+        if (student.id === studentId) {
+          const newAttendance = { ...student.attendance };
+          newAttendance[week] = !newAttendance[week];
+          return { ...student, attendance: newAttendance };
+        }
+        return student;
+      })
+    );
   };
 
   const toggleSession = () => {
@@ -46,10 +65,6 @@ export default function Home() {
     });
   };
 
-  const studentDataWithAvatars = useMemo(() => {
-    return students;
-  }, []);
-
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <Header />
@@ -61,17 +76,18 @@ export default function Home() {
           </TabsList>
           <TabsContent value="student">
             <StudentView
-              students={studentDataWithAvatars}
+              students={students}
               onSignIn={handleSignIn}
               isSessionActive={sessionActive}
             />
           </TabsContent>
           <TabsContent value="lecturer">
             <LecturerDashboard
-              students={studentDataWithAvatars}
+              students={students}
               signedInStudents={signedInStudents}
               isSessionActive={sessionActive}
               onToggleSession={toggleSession}
+              onManualAttendanceToggle={handleManualAttendanceToggle}
             />
           </TabsContent>
         </Tabs>

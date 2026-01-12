@@ -17,11 +17,13 @@ export function LecturerDashboard({
   signedInStudents,
   isSessionActive,
   onToggleSession,
+  onManualAttendanceToggle,
 }: {
   students: Student[];
   signedInStudents: SignedInStudent[];
   isSessionActive: boolean;
   onToggleSession: () => void;
+  onManualAttendanceToggle: (studentId: string, week: string) => void;
 }) {
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
@@ -103,7 +105,7 @@ export function LecturerDashboard({
           <CardDescription>Semester-wide attendance sheet for manual records and printing.</CardDescription>
         </CardHeader>
         <CardContent>
-          <AttendanceReport students={students} />
+          <AttendanceReport students={students} onManualAttendanceToggle={onManualAttendanceToggle} />
         </CardContent>
       </Card>
     </div>
