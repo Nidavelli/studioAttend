@@ -5,12 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import type { Student } from '@/lib/data';
-import type { SignedInStudent } from '@/app/page';
+import type { SignedInStudent, Location } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
+import { MapPin } from 'lucide-react';
 
 export function LecturerDashboard({
   students,
@@ -18,12 +19,14 @@ export function LecturerDashboard({
   isSessionActive,
   onToggleSession,
   onManualAttendanceToggle,
+  lecturerLocation,
 }: {
   students: Student[];
   signedInStudents: SignedInStudent[];
   isSessionActive: boolean;
   onToggleSession: () => void;
   onManualAttendanceToggle: (studentId: string, week: string) => void;
+  lecturerLocation: Location | null;
 }) {
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
@@ -40,6 +43,18 @@ export function LecturerDashboard({
           <Button onClick={onToggleSession} className="w-full" variant={isSessionActive ? 'destructive' : 'default'}>
             {isSessionActive ? 'End Session' : 'Start Session'}
           </Button>
+
+          {lecturerLocation && (
+            <>
+              <Separator className="my-2"/>
+              <div className="w-full text-center p-2 rounded-lg bg-muted">
+                <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
+                <p className="text-xs text-muted-foreground font-mono">
+                  Lat: {lecturerLocation.latitude.toFixed(5)}, Lon: {lecturerLocation.longitude.toFixed(5)}
+                </p>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
       

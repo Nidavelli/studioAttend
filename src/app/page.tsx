@@ -7,6 +7,7 @@ import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import type { Student } from '@/lib/data';
 import { students as initialStudents } from '@/lib/data';
+import { useToast } from "@/hooks/use-toast"
 
 export type SignedInStudent = {
   id: string;
@@ -15,10 +16,17 @@ export type SignedInStudent = {
   signedInAt: string;
 };
 
+export type Location = {
+  latitude: number;
+  longitude: number;
+};
+
 export default function Home() {
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [sessionActive, setSessionActive] = useState(false);
   const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
+  const [lecturerLocation, setLecturerLocation] = useState<Location | null>(null);
+  const { toast } = useToast();
 
   const handleSignIn = (studentId: string) => {
     const student = students.find((s) => s.id === studentId);
@@ -56,13 +64,36 @@ export default function Home() {
   };
 
   const toggleSession = () => {
-    setSessionActive(active => {
-      if (active) {
-        // if session is ending, clear signed in students
-        setSignedInStudents([]);
+    if (isSessionActive) {
+      setSessionActive(false);
+      setSignedInStudents([]);
+      setLecturerLocation(null);
+    } else {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setLecturerLocation({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+            setSessionActive(true);
+          },
+          (error) => {
+            toast({
+              variant: "destructive",
+              title: "Location Error",
+              description: `Could not retrieve lecturer's location: ${error.message}`,
+            });
+          }
+        );
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Unsupported Browser",
+          description: "Geolocation is not supported by your browser.",
+        });
       }
-      return !active;
-    });
+    }
   };
 
   return (
@@ -79,6 +110,7 @@ export default function Home() {
               students={students}
               onSignIn={handleSignIn}
               isSessionActive={sessionActive}
+              lecturerLocation={lecturerLocation}
             />
           </TabsContent>
           <TabsContent value="lecturer">
@@ -88,6 +120,7 @@ export default function Home() {
               isSessionActive={sessionActive}
               onToggleSession={toggleSession}
               onManualAttendanceToggle={handleManualAttendanceToggle}
+              lecturerLocation={lecturerLocation}
             />
           </TabsContent>
         </Tabs>
