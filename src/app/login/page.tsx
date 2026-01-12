@@ -11,14 +11,7 @@ import {
   isSignInWithWebAuthnSupported,
   signInWithWebAuthn,
   linkWithCredential,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
-  getMultiFactorResolver,
-  PhoneAuthProvider,
-  PhoneMultiFactorGenerator,
-  RecaptchaVerifier,
   User,
-  parseCredential,
   PublicKeyCredential,
 } from 'firebase/auth';
 import { useAuth } from '@/firebase/provider';
