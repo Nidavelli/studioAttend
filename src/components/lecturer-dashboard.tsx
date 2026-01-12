@@ -102,7 +102,7 @@ export function LecturerDashboard({
                   signedInStudents.map((student) => {
                     const avatar = findImage(student.avatarId);
                     return (
-                      <TableRow key={student.id} className="data-[state=open]:animate-in data-[state=open]:fade-in">
+                      <TableRow key={student.id}>
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <Avatar>
