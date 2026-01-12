@@ -36,6 +36,10 @@ export function LecturerDashboard({
   sessionRadius: number;
   setSessionRadius: (radius: number) => void;
 }) {
+  const mapUrl = lecturerLocation 
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${lecturerLocation.longitude-0.005},${lecturerLocation.latitude-0.005},${lecturerLocation.longitude+0.005},${lecturerLocation.latitude+0.005}&layer=mapnik&marker=${lecturerLocation.latitude},${lecturerLocation.longitude}`
+    : '';
+
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
       <Card className="lg:col-span-1">
@@ -77,7 +81,7 @@ export function LecturerDashboard({
                     style={{ border: 0 }}
                     loading="lazy"
                     allowFullScreen
-                    src={`https://www.google.com/maps/embed/v1/view?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&center=${lecturerLocation.latitude},${lecturerLocation.longitude}&zoom=17&maptype=roadmap`}
+                    src={mapUrl}
                   ></iframe>
                 </div>
                 <div className="flex items-center justify-center gap-2 text-xs pt-2">
