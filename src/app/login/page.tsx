@@ -8,6 +8,9 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
+  isSignInWithWebAuthnSupported,
+  signInWithWebAuthn,
+  createWebAuthnCredential,
   User,
 } from 'firebase/auth';
 import { useAuth } from '@/firebase/provider';
@@ -24,6 +27,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from '@/hooks/use-toast';
 import { AttendSyncIcon } from '@/components/icons';
+import { KeyRound } from 'lucide-react';
 
 const provider = new GoogleAuthProvider();
 
@@ -32,6 +36,11 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
   
+  const [isPasskeySupported, setIsPasskeySupported] = useState(false);
+  React.useEffect(() => {
+    isSignInWithWebAuthnSupported(auth).then(setIsPasskeySupported);
+  }, [auth]);
+
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
 
@@ -48,12 +57,30 @@ export default function LoginPage() {
     router.push('/');
   };
 
-  const handleSignUpSuccess = (user: User) => {
-    toast({
-      title: 'Sign Up Successful',
-      description: `Welcome, ${user.displayName || user.email}!`,
-    });
-    router.push('/');
+  const handleSignUpSuccess = async (user: User) => {
+    // Prompt to create a passkey after sign-up
+    try {
+      await createWebAuthnCredential(auth, {
+        rp: { id: window.location.hostname, name: 'AttendSync' },
+        user: {
+          id: new TextEncoder().encode(user.uid),
+          name: user.email!,
+          displayName: user.displayName!,
+        },
+      });
+      toast({
+        title: 'Sign Up Successful!',
+        description: `Welcome, ${user.displayName}! A passkey has been created for easy sign-in next time.`,
+      });
+    } catch (passkeyError: any) {
+      console.error("Passkey creation failed:", passkeyError);
+      toast({
+        title: 'Sign Up Successful!',
+        description: `Welcome, ${user.displayName}! You can create a passkey later in your profile settings.`,
+      });
+    } finally {
+        router.push('/');
+    }
   };
 
   const handleAuthError = (error: any) => {
@@ -72,6 +99,15 @@ export default function LoginPage() {
       handleAuthError(error);
     }
   };
+  
+  const handlePasskeySignIn = async () => {
+    try {
+        const credential = await signInWithWebAuthn(auth);
+        handleLoginSuccess(credential.user);
+    } catch (error) {
+        handleAuthError(error);
+    }
+  };
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,9 +124,8 @@ export default function LoginPage() {
     try {
       const result = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
       await updateProfile(result.user, { displayName: signUpName });
-      // Reload user to get the updated profile
-      await result.user.reload();
-      handleSignUpSuccess(result.user);
+      await result.user.reload(); // Reload user to get the updated profile
+      await handleSignUpSuccess(result.user);
     } catch (error) {
       handleAuthError(error);
     }
@@ -114,6 +149,12 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+             {isPasskeySupported && (
+               <Button variant="outline" className="w-full" onClick={handlePasskeySignIn}>
+                 <KeyRound className="mr-2 h-4 w-4" />
+                 Sign in with a passkey
+               </Button>
+             )}
             <Button
               variant="outline"
               className="w-full"
