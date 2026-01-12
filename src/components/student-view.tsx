@@ -12,14 +12,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle } from 'lucide-react';
 import type { Student } from '@/lib/data';
 import { findImage, COURSE_NAME } from '@/lib/data';
-import { getPersonalizedSheet } from '@/app/actions';
-import { AttendanceSheet } from '@/components/attendance-sheet';
 import { useToast } from "@/hooks/use-toast";
 import type { Location } from '@/app/page';
+import { StudentAttendanceReport } from './student-attendance-report';
 
 
 type SignInStep = 'idle' | 'locating' | 'authenticating' | 'success' | 'error';
@@ -65,7 +64,6 @@ export function StudentView({
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
   const [showSheet, setShowSheet] = useState(false);
-  const [attendanceSheetContent, setAttendanceSheetContent] = useState('');
   const { toast } = useToast();
 
   const selectedStudent = useMemo(
@@ -117,13 +115,6 @@ export function StudentView({
         
         onSignIn(selectedStudent.id);
         setSignInStep('success');
-        
-        const sheet = await getPersonalizedSheet({ 
-          studentName: selectedStudent.name,
-          courseName: COURSE_NAME,
-          attendanceRecord: selectedStudent.attendance
-        });
-        setAttendanceSheetContent(sheet);
         setShowSheet(true);
     
         setTimeout(() => setSignInStep('idle'), 5000);
@@ -197,11 +188,14 @@ export function StudentView({
       </Card>
 
       <Dialog open={showSheet} onOpenChange={setShowSheet}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle className="font-headline">Personalized Attendance Sheet</DialogTitle>
+            <DialogTitle className="font-headline">My Attendance Report</DialogTitle>
+            <DialogDescription>
+              Your sign-in was successful. Here is your current attendance record.
+            </DialogDescription>
           </DialogHeader>
-          <AttendanceSheet content={attendanceSheetContent} />
+          {selectedStudent && <StudentAttendanceReport student={selectedStudent} />}
         </DialogContent>
       </Dialog>
     </div>
