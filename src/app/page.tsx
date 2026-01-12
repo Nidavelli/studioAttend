@@ -64,7 +64,7 @@ export default function Home() {
   };
 
   const toggleSession = () => {
-    if (isSessionActive) {
+    if (sessionActive) {
       setSessionActive(false);
       setSignedInStudents([]);
       setLecturerLocation(null);
