@@ -258,7 +258,7 @@ export function StudentView({
             size="lg"
           >
             {signInStep !== 'idle' && signInStep !== 'success' && signInStep !== 'error' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {stepMessages[signInStep].icon && signInStep !== 'idle' && <span className="mr-2">{stepMessages[signIn_step].icon}</span>}
+            {stepMessages[signInStep].icon && signInStep !== 'idle' && <span className="mr-2">{stepMessages[signInStep].icon}</span>}
             {stepMessages[signInStep].text}
           </Button>
         </CardContent>
