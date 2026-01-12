@@ -101,7 +101,7 @@ export function StudentView({
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentForReport, setStudentForReport] = useState<Student | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
-  const [showSheet, setShowSheet] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -111,6 +111,8 @@ export function StudentView({
     // Reset student selection when course changes
     setSelectedStudentId(null);
     setStudentForReport(null);
+    setShowReport(false);
+    setSignInStep('idle');
   }, [students]);
   
   const handleStudentSelect = (studentId: string) => {
@@ -180,11 +182,13 @@ export function StudentView({
         if (updatedStudent) {
             setStudentForReport(updatedStudent);
             setSignInStep('success');
-            setShowSheet(true);
+            setShowReport(true);
         } else {
-            // onSignIn shows toasts for specific errors like already signed in
+            // onSignIn shows toasts for specific errors like session expired,
             // so we only need to handle the generic failure case.
-            setSignInStep('error');
+            if(signInStep !== 'success') { // prevent flicker if already handled
+              setSignInStep('error');
+            }
         }
     
         setTimeout(() => setSignInStep('idle'), 5000);
@@ -254,13 +258,13 @@ export function StudentView({
             size="lg"
           >
             {signInStep !== 'idle' && signInStep !== 'success' && signInStep !== 'error' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {stepMessages[signInStep].icon && signInStep !== 'idle' && <span className="mr-2">{stepMessages[signInStep].icon}</span>}
+            {stepMessages[signInStep].icon && signInStep !== 'idle' && <span className="mr-2">{stepMessages[signIn_step].icon}</span>}
             {stepMessages[signInStep].text}
           </Button>
         </CardContent>
       </Card>
 
-      <Dialog open={showSheet} onOpenChange={setShowSheet}>
+      <Dialog open={showReport} onOpenChange={setShowReport}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="font-headline">My Attendance Report</DialogTitle>
@@ -274,5 +278,3 @@ export function StudentView({
     </div>
   );
 }
-
-    
