@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -15,6 +16,11 @@ import { MapPin, AlertTriangle, Target } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+const LecturerMap = dynamic(() => import('@/components/lecturer-map').then(mod => mod.LecturerMap), { 
+  ssr: false,
+  loading: () => <div className="aspect-video w-full rounded-md bg-muted animate-pulse" />
+});
 
 
 export function LecturerDashboard({
@@ -36,11 +42,6 @@ export function LecturerDashboard({
   sessionRadius: number;
   setSessionRadius: (radius: number) => void;
 }) {
-  const getMapUrl = (location: Location | null) => {
-    if (!location) return '';
-    return `https://www.openstreetmap.org/export/embed.html?bbox=${location.longitude-0.005},${location.latitude-0.005},${location.longitude+0.005},${location.latitude+0.005}&layer=mapnik&marker=${location.latitude},${location.longitude}`;
-  };
-
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
       <Card className="lg:col-span-1">
@@ -76,14 +77,7 @@ export function LecturerDashboard({
               <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
                 <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
                 <div className="aspect-video w-full rounded-md overflow-hidden border border-border mt-2">
-                   <iframe
-                    width="100%"
-                    height="100%"
-                    style={{ border: 0 }}
-                    loading="lazy"
-                    allowFullScreen
-                    src={getMapUrl(lecturerLocation)}
-                  ></iframe>
+                   <LecturerMap location={lecturerLocation} radius={sessionRadius} />
                 </div>
                 <div className="flex items-center justify-center gap-2 text-xs pt-2">
                   <Target className="h-3 w-3"/>
