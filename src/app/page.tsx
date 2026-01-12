@@ -27,6 +27,7 @@ export type Location = {
 export default function Home() {
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [selectedCourseId, setSelectedCourseId] = useState<string>(initialCourses[0].id);
+  const [studentForReport, setStudentForReport] = useState<Student | null>(null);
 
   const selectedCourse = useMemo(() => {
     return courses.find(c => c.id === selectedCourseId)!;
@@ -77,7 +78,7 @@ export default function Home() {
     setSelectedCourseId(courseId);
   };
 
-  const handleSignIn = (studentId: string, deviceId: string): Student | null => {
+  const handleSignIn = (studentId: string, deviceId: string): boolean => {
     if (sessionEndTime && new Date() > sessionEndTime) {
         toast({
             variant: "destructive",
@@ -85,14 +86,14 @@ export default function Home() {
             description: "The attendance session has ended.",
         });
         setSessionActive(false);
-        return null;
+        return false;
     }
 
     const course = courses.find(c => c.id === selectedCourseId);
-    if (!course) return null;
+    if (!course) return false;
     
     const student = course.students.find((s) => s.id === studentId);
-    if (!student) return null;
+    if (!student) return false;
 
     if (signedInStudents.some((s) => s.id === studentId)) {
         toast({
@@ -100,10 +101,13 @@ export default function Home() {
             title: "Already Signed In",
             description: "You have already signed in for this session.",
         });
-        // On second sign-in, we know they are signed in, so we can find their updated record.
+        // On second sign-in, we know they are signed in, so we can find their updated record and show the report.
         const currentCourse = courses.find(c => c.id === selectedCourseId);
         const currentStudent = currentCourse?.students.find(s => s.id === studentId);
-        return currentStudent || null;
+        if (currentStudent) {
+          setStudentForReport(currentStudent);
+        }
+        return true; // Still considered a "successful" interaction for UI purposes
     }
 
     const isDuplicate = usedDeviceIds.has(deviceId);
@@ -138,10 +142,15 @@ export default function Home() {
         }
         return c;
       });
+      // After updating the courses state, set the student for the report
+      // This uses a functional update to ensure it happens after the setCourses update.
+      if (finalUpdatedStudent) {
+        setStudentForReport(finalUpdatedStudent);
+      }
       return newCourses;
     });
 
-    return finalUpdatedStudent;
+    return true;
   };
 
 
@@ -232,6 +241,8 @@ export default function Home() {
                 sessionRadius={sessionRadius}
                 sessionEndTime={sessionEndTime}
                 courseName={selectedCourse.name}
+                studentForReport={studentForReport}
+                onCloseReport={() => setStudentForReport(null)}
               />
             </TabsContent>
             <TabsContent value="lecturer">

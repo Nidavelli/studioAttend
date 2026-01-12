@@ -89,19 +89,21 @@ export function StudentView({
   sessionRadius,
   sessionEndTime,
   courseName,
+  studentForReport,
+  onCloseReport,
 }: {
   students: Student[];
-  onSignIn: (studentId: string, deviceId: string) => Student | null;
+  onSignIn: (studentId: string, deviceId: string) => boolean;
   isSessionActive: boolean;
   lecturerLocation: Location | null;
   sessionRadius: number;
   sessionEndTime: Date | null;
   courseName: string;
+  studentForReport: Student | null;
+  onCloseReport: () => void;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [studentForReport, setStudentForReport] = useState<Student | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
-  const [showReport, setShowReport] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -110,8 +112,6 @@ export function StudentView({
     setDeviceId(generateSimpleId());
     // Reset student selection when course changes
     setSelectedStudentId(null);
-    setStudentForReport(null);
-    setShowReport(false);
     setSignInStep('idle');
   }, [students]);
   
@@ -177,15 +177,11 @@ export function StudentView({
         setSignInStep('authenticating');
         // Artificial delay to simulate authentication
         setTimeout(() => {
-          const updatedStudent = onSignIn(selectedStudent.id, deviceId);
+          const wasSuccessful = onSignIn(selectedStudent.id, deviceId);
           
-          if (updatedStudent) {
-              setStudentForReport(updatedStudent);
+          if (wasSuccessful) {
               setSignInStep('success');
-              setShowReport(true);
           } else {
-              // onSignIn shows specific toasts (e.g. "already signed in").
-              // If it returns null for other reasons, show a generic failure.
               setSignInStep('error');
           }
       
@@ -263,7 +259,7 @@ export function StudentView({
         </CardContent>
       </Card>
 
-      <Dialog open={showReport} onOpenChange={setShowReport}>
+      <Dialog open={!!studentForReport} onOpenChange={(isOpen) => !isOpen && onCloseReport()}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="font-headline">My Attendance Report</DialogTitle>
