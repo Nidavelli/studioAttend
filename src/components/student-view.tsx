@@ -129,18 +129,29 @@ export function StudentView({
     setTimeout(() => setSignInStep('idle'), delay);
   };
 
+  const recordAttendance = () => {
+    setSignInStep('recording');
+    setTimeout(() => {
+      const updatedStudent = onSignIn(selectedStudent!.id, deviceId!);
+      if (updatedStudent) {
+        setSignInStep('success');
+      } else {
+        setSignInStep('error');
+      }
+      resetSignIn();
+    }, 500);
+  };
+
   const handleBiometricAuth = async () => {
     setSignInStep('biometric');
     try {
         const isSupported = await (window.PublicKeyCredential as any)?.isUserVerifyingPlatformAuthenticatorAvailable?.();
         if (!isSupported) {
             toast({
-                variant: "destructive",
                 title: "Biometrics Not Supported",
-                description: "Your device or browser does not support biometric authentication.",
+                description: "Continuing with standard sign-in.",
             });
-            setSignInStep('error');
-            resetSignIn();
+            recordAttendance();
             return;
         }
 
@@ -166,18 +177,7 @@ export function StudentView({
         });
 
         if (credential) {
-            setSignInStep('recording');
-            // Artificial delay to give user feedback
-             setTimeout(() => {
-                const updatedStudent = onSignIn(selectedStudent!.id, deviceId!);
-                if (updatedStudent) {
-                  setSignInStep('success');
-                } else {
-                  // This case handles the "already signed in" toast from the parent
-                  setSignInStep('error');
-                }
-                resetSignIn();
-            }, 1000);
+            recordAttendance();
         } else {
             throw new Error("Biometric authentication failed or was canceled.");
         }
@@ -186,7 +186,7 @@ export function StudentView({
         toast({
             variant: "destructive",
             title: "Biometric Failed",
-            description: error.name === 'NotAllowedError' ? 'Authentication was canceled.' : 'Could not verify your identity.',
+            description: error.name === 'NotAllowedError' ? 'Authentication was canceled or not permitted.' : 'Could not verify your identity.',
         });
         setSignInStep('error');
         resetSignIn();
