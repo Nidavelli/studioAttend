@@ -150,7 +150,7 @@ export function StudentView({
         const credential = await navigator.credentials.create({
             publicKey: {
                 challenge,
-                rp: { name: "AttendSync" },
+                rp: { id: window.location.hostname, name: "AttendSync" },
                 user: {
                     id: new TextEncoder().encode(selectedStudent!.id),
                     name: selectedStudent!.email,
@@ -330,7 +330,3 @@ export function StudentView({
     </div>
   );
 }
-
-    
-
-    
