@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React from 'react';
 import {
   Select,
   SelectContent,
@@ -50,9 +50,9 @@ function getDistance(loc1: Location, loc2: Location) {
 }
 
 const CountdownTimer = ({ endTime }: { endTime: Date }) => {
-  const [timeLeft, setTimeLeft] = useState('');
+  const [timeLeft, setTimeLeft] = React.useState('');
 
-  useEffect(() => {
+  React.useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
       const difference = endTime.getTime() - now.getTime();
@@ -93,7 +93,7 @@ export function StudentView({
   onCloseReport,
 }: {
   students: Student[];
-  onSignIn: (studentId: string, deviceId: string) => boolean;
+  onSignIn: (studentId: string, deviceId: string) => Student | null;
   isSessionActive: boolean;
   lecturerLocation: Location | null;
   sessionRadius: number;
@@ -102,9 +102,9 @@ export function StudentView({
   studentForReport: Student | null;
   onCloseReport: () => void;
 }) {
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [signInStep, setSignInStep] = useState<SignInStep>('idle');
-  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = React.useState<string | null>(null);
+  const [signInStep, setSignInStep] = React.useState<SignInStep>('idle');
+  const [deviceId, setDeviceId] = React.useState<string | null>(null);
   const { toast } = useToast();
 
   React.useEffect(() => {
@@ -119,7 +119,7 @@ export function StudentView({
     setSelectedStudentId(studentId);
   }
 
-  const selectedStudent = useMemo(
+  const selectedStudent = React.useMemo(
     () => students.find((s) => s.id === selectedStudentId),
     [selectedStudentId, students]
   );
@@ -177,9 +177,9 @@ export function StudentView({
         setSignInStep('authenticating');
         // Artificial delay to simulate authentication
         setTimeout(() => {
-          const wasSuccessful = onSignIn(selectedStudent.id, deviceId);
+          const updatedStudent = onSignIn(selectedStudent.id, deviceId);
           
-          if (wasSuccessful) {
+          if (updatedStudent) {
               setSignInStep('success');
           } else {
               setSignInStep('error');

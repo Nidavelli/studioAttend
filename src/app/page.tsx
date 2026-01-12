@@ -2,6 +2,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { useUser } from '@/firebase/auth/use-user';
 import { Header } from '@/components/header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StudentView } from '@/components/student-view';
@@ -25,6 +27,8 @@ export type Location = {
 };
 
 export default function Home() {
+  const { user, loading } = useUser();
+  const router = useRouter();
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [selectedCourseId, setSelectedCourseId] = useState<string>(initialCourses[0].id);
   const [studentForReport, setStudentForReport] = useState<Student | null>(null);
@@ -41,6 +45,13 @@ export default function Home() {
   const [sessionDuration, setSessionDuration] = useState<number>(15);
   const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/login');
+    }
+  }, [user, loading, router]);
+
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -78,7 +89,7 @@ export default function Home() {
     setSelectedCourseId(courseId);
   };
 
-  const handleSignIn = (studentId: string, deviceId: string): boolean => {
+  const handleSignIn = (studentId: string, deviceId: string): Student | null => {
     if (sessionEndTime && new Date() > sessionEndTime) {
         toast({
             variant: "destructive",
@@ -86,14 +97,14 @@ export default function Home() {
             description: "The attendance session has ended.",
         });
         setSessionActive(false);
-        return false;
+        return null;
     }
 
     const course = courses.find(c => c.id === selectedCourseId);
-    if (!course) return false;
+    if (!course) return null;
     
     const student = course.students.find((s) => s.id === studentId);
-    if (!student) return false;
+    if (!student) return null;
 
     if (signedInStudents.some((s) => s.id === studentId)) {
         toast({
@@ -101,13 +112,12 @@ export default function Home() {
             title: "Already Signed In",
             description: "You have already signed in for this session.",
         });
-        // On second sign-in, we know they are signed in, so we can find their updated record and show the report.
         const currentCourse = courses.find(c => c.id === selectedCourseId);
         const currentStudent = currentCourse?.students.find(s => s.id === studentId);
         if (currentStudent) {
           setStudentForReport(currentStudent);
         }
-        return true; // Still considered a "successful" interaction for UI purposes
+        return currentStudent || null;
     }
 
     const isDuplicate = usedDeviceIds.has(deviceId);
@@ -142,15 +152,14 @@ export default function Home() {
         }
         return c;
       });
-      // After updating the courses state, set the student for the report
-      // This uses a functional update to ensure it happens after the setCourses update.
+
       if (finalUpdatedStudent) {
         setStudentForReport(finalUpdatedStudent);
       }
       return newCourses;
     });
 
-    return true;
+    return finalUpdatedStudent;
   };
 
 
@@ -203,6 +212,19 @@ export default function Home() {
       }
     }
   };
+
+  if (loading || !user) {
+    return (
+      <div className="flex flex-col min-h-screen bg-background">
+        <Header />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p>Loading...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-background">

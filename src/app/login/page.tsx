@@ -1,0 +1,153 @@
+'use client';
+
+import React from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  User,
+} from 'firebase/auth';
+import { useAuth } from '@/firebase/provider';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { AttendSyncIcon } from '@/components/icons';
+
+const provider = new GoogleAuthProvider();
+
+export default function LoginPage() {
+  const auth = useAuth();
+  const router = useRouter();
+  const { toast } = useToast();
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+
+  const handleLoginSuccess = (user: User) => {
+    toast({
+      title: 'Login Successful',
+      description: `Welcome back, ${user.displayName || user.email}!`,
+    });
+    router.push('/');
+  };
+
+  const handleLoginError = (error: any) => {
+    toast({
+      variant: 'destructive',
+      title: 'Login Failed',
+      description: error.message || 'An unexpected error occurred.',
+    });
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const result = await signInWithPopup(auth, provider);
+      handleLoginSuccess(result.user);
+    } catch (error) {
+      handleLoginError(error);
+    }
+  };
+
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      handleLoginSuccess(result.user);
+    } catch (error) {
+      handleLoginError(error);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="text-center">
+          <div className="flex justify-center items-center gap-3 mb-4">
+             <AttendSyncIcon className="h-8 w-8 text-primary" />
+             <h1 className="text-2xl font-headline font-bold text-foreground">
+                AttendSync
+             </h1>
+          </div>
+          <CardTitle className="font-headline">Sign In</CardTitle>
+          <CardDescription>
+            Choose a method to sign into your account
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleGoogleSignIn}
+            >
+              <svg className="mr-2 h-4 w-4" viewBox="0 0 48 48">
+                <path
+                  fill="#EA4335"
+                  d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l8.38 6.42C12.55 13.44 17.84 9.5 24 9.5z"
+                ></path>
+                <path
+                  fill="#4285F4"
+                  d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6.09c4.5-4.18 7.09-10.36 7.09-17.74z"
+                ></path>
+                <path
+                  fill="#FBBC05"
+                  d="M10.94 28.72c-.52-1.57-.82-3.24-.82-5.04s.3-3.47.82-5.04l-8.38-6.42C.93 16.6 0 20.14 0 24s.93 7.4 2.56 11.14l8.38-6.42z"
+                ></path>
+                <path
+                  fill="#34A853"
+                  d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6.09c-2.15 1.45-4.92 2.3-8.16 2.3-6.15 0-11.44-3.94-13.38-9.36l-8.38 6.42C6.51 42.62 14.62 48 24 48z"
+                ></path>
+                <path fill="none" d="M0 0h48v48H0z"></path>
+              </svg>
+              Sign in with Google
+            </Button>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or continue with
+                </span>
+              </div>
+            </div>
+            <form onSubmit={handleEmailSignIn} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="m@example.com"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <Button type="submit" className="w-full">
+                Sign In with Email
+              </Button>
+            </form>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
