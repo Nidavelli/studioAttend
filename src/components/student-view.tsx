@@ -15,7 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle, Timer } from 'lucide-react';
 import type { Student } from '@/lib/data';
-import { findImage, COURSE_NAME } from '@/lib/data';
+import { findImage } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import type { Location } from '@/app/page';
 import { StudentAttendanceReport } from './student-attendance-report';
@@ -87,6 +87,7 @@ export function StudentView({
   lecturerLocation,
   sessionRadius,
   sessionEndTime,
+  courseName,
 }: {
   students: Student[];
   onSignIn: (studentId: string, deviceId: string) => void;
@@ -94,6 +95,7 @@ export function StudentView({
   lecturerLocation: Location | null;
   sessionRadius: number;
   sessionEndTime: Date | null;
+  courseName: string;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
@@ -104,7 +106,9 @@ export function StudentView({
   React.useEffect(() => {
     // Generate a simple device ID on component mount
     setDeviceId(generateSimpleId());
-  }, []);
+    // Reset student selection when course changes
+    setSelectedStudentId(null);
+  }, [students]);
 
   const selectedStudent = useMemo(
     () => students.find((s) => s.id === selectedStudentId),
@@ -205,7 +209,7 @@ export function StudentView({
           <CardDescription className="text-center">Select your name to sign in for today's class.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
-          <Select onValueChange={setSelectedStudentId} disabled={!isSessionActive}>
+          <Select onValueChange={setSelectedStudentId} value={selectedStudentId || ''} disabled={!isSessionActive}>
             <SelectTrigger>
               <SelectValue placeholder="Select your name" />
             </SelectTrigger>
@@ -246,10 +250,10 @@ export function StudentView({
           <DialogHeader>
             <DialogTitle className="font-headline">My Attendance Report</DialogTitle>
             <DialogDescription>
-              Your sign-in was successful. Here is your current attendance record.
+              Your sign-in was successful. Here is your current attendance record for {courseName}.
             </DialogDescription>
           </DialogHeader>
-          {selectedStudent && <StudentAttendanceReport student={selectedStudent} />}
+          {selectedStudent && <StudentAttendanceReport student={selectedStudent} courseName={courseName} />}
         </DialogContent>
       </Dialog>
     </div>

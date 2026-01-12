@@ -52,24 +52,24 @@ export function LecturerDashboard({
   isSessionActive,
   onToggleSession,
   onManualAttendanceToggle,
-  lecturerLocation,
   sessionRadius,
   setSessionRadius,
   sessionDuration,
   setSessionDuration,
   sessionEndTime,
+  attendanceThreshold,
 }: {
   students: Student[];
   signedInStudents: SignedInStudent[];
   isSessionActive: boolean;
   onToggleSession: () => void;
   onManualAttendanceToggle: (studentId: string, week: string) => void;
-  lecturerLocation: Location | null;
   sessionRadius: number;
   setSessionRadius: (radius: number) => void;
   sessionDuration: number;
   setSessionDuration: (duration: number) => void;
   sessionEndTime: Date | null;
+  attendanceThreshold: number;
 }) {
 
   return (
@@ -117,15 +117,13 @@ export function LecturerDashboard({
           {isSessionActive && (
             <>
               <Separator className="my-2"/>
-              {lecturerLocation && (
-                <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
-                  <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
-                  <div className="flex items-center justify-center gap-2 text-xs pt-2">
-                    <Target className="h-3 w-3"/>
-                    <span className="font-mono">{sessionRadius}m Radius</span>
-                  </div>
+              <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
+                <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
+                <div className="flex items-center justify-center gap-2 text-xs pt-2">
+                  <Target className="h-3 w-3"/>
+                  <span className="font-mono">{sessionRadius}m Radius</span>
                 </div>
-              )}
+              </div>
                {sessionEndTime && <CountdownTimer endTime={sessionEndTime} />}
             </>
           )}
@@ -197,7 +195,7 @@ export function LecturerDashboard({
           <CardDescription>Overall attendance records for all students.</CardDescription>
         </CardHeader>
         <CardContent>
-          <AttendanceAnalytics students={students} />
+          <AttendanceAnalytics students={students} attendanceThreshold={attendanceThreshold} />
         </CardContent>
       </Card>
 

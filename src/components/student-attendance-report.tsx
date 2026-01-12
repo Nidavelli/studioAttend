@@ -4,16 +4,15 @@ import React from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Check, X } from 'lucide-react';
 import type { Student } from '@/lib/data';
-import { COURSE_NAME } from '@/lib/data';
 
 const TOTAL_WEEKS = 13;
 
-export function StudentAttendanceReport({ student }: { student: Student }) {
+export function StudentAttendanceReport({ student, courseName }: { student: Student, courseName: string }) {
   return (
     <div>
       <div className="text-center mb-4">
         <h3 className="font-bold">{student.name}</h3>
-        <p className="text-sm text-muted-foreground">{COURSE_NAME}</p>
+        <p className="text-sm text-muted-foreground">{courseName}</p>
       </div>
       <div className="border rounded-lg overflow-x-auto">
         <Table>

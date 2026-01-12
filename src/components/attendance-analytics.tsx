@@ -9,10 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Loader2, FileText } from 'lucide-react';
 import type { Student } from '@/lib/data';
-import { findImage, ATTENDANCE_THRESHOLD } from '@/lib/data';
+import { findImage } from '@/lib/data';
 import { getAttendanceSummary } from '@/app/actions';
 
-export function AttendanceAnalytics({ students }: { students: Student[] }) {
+export function AttendanceAnalytics({ students, attendanceThreshold }: { students: Student[], attendanceThreshold: number }) {
   const [loadingSummary, setLoadingSummary] = useState<string | null>(null);
   const [summary, setSummary] = useState<{ title: string; content: string } | null>(null);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
@@ -37,7 +37,7 @@ export function AttendanceAnalytics({ students }: { students: Student[] }) {
     const summaryContent = await getAttendanceSummary({
       studentName: student.name,
       attendanceRecords: attendanceString,
-      attendanceThreshold: ATTENDANCE_THRESHOLD,
+      attendanceThreshold: attendanceThreshold,
     });
 
     setSummary({
@@ -62,7 +62,7 @@ export function AttendanceAnalytics({ students }: { students: Student[] }) {
           <TableBody>
             {students.map((student) => {
               const { percentage, attended, total } = calculateAttendance(student);
-              const isBelowThreshold = percentage < ATTENDANCE_THRESHOLD;
+              const isBelowThreshold = percentage < attendanceThreshold;
               const avatar = findImage(student.avatarId);
               const isLoading = loadingSummary === student.id;
 
@@ -78,7 +78,7 @@ export function AttendanceAnalytics({ students }: { students: Student[] }) {
                         <div className="font-medium">{student.name}</div>
                         {isBelowThreshold && (
                           <Badge variant="destructive" className="mt-1">
-                            Below {ATTENDANCE_THRESHOLD}%
+                            Below {attendanceThreshold}%
                           </Badge>
                         )}
                       </div>

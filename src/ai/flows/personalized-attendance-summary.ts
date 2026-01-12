@@ -46,6 +46,7 @@ const prompt = ai.definePrompt({
   - Identifying any weeks where attendance was below the threshold.
   - Suggesting strategies to improve attendance in the future.
   - Pointing out any positive attendance patterns.
+  - Keep the summary to about 3-4 sentences.
 `,
 });
 

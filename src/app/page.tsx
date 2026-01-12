@@ -1,14 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from '@/components/header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
-import type { Student } from '@/lib/data';
-import { students as initialStudents } from '@/lib/data';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { Student, Course } from '@/lib/data';
+import { courses as initialCourses } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
-import { generateSimpleId } from '@/lib/utils';
 
 export type SignedInStudent = {
   id: string;
@@ -24,7 +24,13 @@ export type Location = {
 };
 
 export default function Home() {
-  const [students, setStudents] = useState<Student[]>(initialStudents);
+  const [courses, setCourses] = useState<Course[]>(initialCourses);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>(initialCourses[0].id);
+
+  const selectedCourse = useMemo(() => {
+    return courses.find(c => c.id === selectedCourseId)!;
+  }, [courses, selectedCourseId]);
+
   const [sessionActive, setSessionActive] = useState(false);
   const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
   const [lecturerLocation, setLecturerLocation] = useState<Location | null>(null);
@@ -39,8 +45,7 @@ export default function Home() {
     if (sessionActive && sessionEndTime) {
       interval = setInterval(() => {
         if (new Date() > sessionEndTime) {
-          setSessionActive(false);
-          setSessionEndTime(null);
+          endSession();
           toast({
             title: "Session Ended",
             description: "The attendance session has automatically ended.",
@@ -50,7 +55,26 @@ export default function Home() {
     }
     return () => clearInterval(interval);
   }, [sessionActive, sessionEndTime, toast]);
+  
+  const endSession = () => {
+    setSessionActive(false);
+    setSignedInStudents([]);
+    setLecturerLocation(null);
+    setUsedDeviceIds(new Set());
+    setSessionEndTime(null);
+  };
 
+  const handleCourseChange = (courseId: string) => {
+    if (sessionActive) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Change Course",
+        description: "Please end the active session before changing the course.",
+      });
+      return;
+    }
+    setSelectedCourseId(courseId);
+  };
 
   const handleSignIn = (studentId: string, deviceId: string) => {
     if (sessionEndTime && new Date() > sessionEndTime) {
@@ -62,7 +86,8 @@ export default function Home() {
       setSessionActive(false);
       return;
     }
-    const student = students.find((s) => s.id === studentId);
+    
+    const student = selectedCourse.students.find((s) => s.id === studentId);
     if (student && !signedInStudents.some((s) => s.id === studentId)) {
       const isDuplicate = usedDeviceIds.has(deviceId);
 
@@ -77,37 +102,43 @@ export default function Home() {
       setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
       setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
       
-      const updatedStudents = students.map(s => {
-        if (s.id === studentId) {
-          const week = (Object.keys(s.attendance).length + 1).toString();
-          return { ...s, attendance: { ...s.attendance, [week]: true } };
+      setCourses(currentCourses => currentCourses.map(course => {
+        if (course.id === selectedCourseId) {
+          const updatedStudents = course.students.map(s => {
+            if (s.id === studentId) {
+              const totalWeeks = Object.keys(s.attendance).length;
+              const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
+              return { ...s, attendance: { ...s.attendance, [nextWeek]: true } };
+            }
+            return s;
+          });
+          return { ...course, students: updatedStudents };
         }
-        return s;
-      });
-      setStudents(updatedStudents);
+        return course;
+      }));
     }
   };
 
   const handleManualAttendanceToggle = (studentId: string, week: string) => {
-    setStudents(currentStudents => 
-      currentStudents.map(student => {
-        if (student.id === studentId) {
-          const newAttendance = { ...student.attendance };
-          newAttendance[week] = !newAttendance[week];
-          return { ...student, attendance: newAttendance };
-        }
-        return student;
-      })
-    );
+    setCourses(currentCourses => currentCourses.map(course => {
+      if (course.id === selectedCourseId) {
+        const updatedStudents = course.students.map(student => {
+          if (student.id === studentId) {
+            const newAttendance = { ...student.attendance };
+            newAttendance[week] = !newAttendance[week];
+            return { ...student, attendance: newAttendance };
+          }
+          return student;
+        });
+        return { ...course, students: updatedStudents };
+      }
+      return course;
+    }));
   };
 
   const toggleSession = () => {
     if (sessionActive) {
-      setSessionActive(false);
-      setSignedInStudents([]);
-      setLecturerLocation(null);
-      setUsedDeviceIds(new Set());
-      setSessionEndTime(null);
+      endSession();
     } else {
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
@@ -142,37 +173,58 @@ export default function Home() {
     <div className="flex flex-col min-h-screen bg-background">
       <Header />
       <main className="flex-1 p-4 sm:p-6 lg:p-8">
-        <Tabs defaultValue="student" className="w-full max-w-7xl mx-auto">
-          <TabsList className="grid w-full grid-cols-2 max-w-md mx-auto">
-            <TabsTrigger value="student">Student</TabsTrigger>
-            <TabsTrigger value="lecturer">Lecturer</TabsTrigger>
-          </TabsList>
-          <TabsContent value="student">
-            <StudentView
-              students={students}
-              onSignIn={handleSignIn}
-              isSessionActive={sessionActive}
-              lecturerLocation={lecturerLocation}
-              sessionRadius={sessionRadius}
-              sessionEndTime={sessionEndTime}
-            />
-          </TabsContent>
-          <TabsContent value="lecturer">
-            <LecturerDashboard
-              students={students}
-              signedInStudents={signedInStudents}
-              isSessionActive={sessionActive}
-              onToggleSession={toggleSession}
-              onManualAttendanceToggle={handleManualAttendanceToggle}
-              lecturerLocation={lecturerLocation}
-              sessionRadius={sessionRadius}
-              setSessionRadius={setSessionRadius}
-              sessionDuration={sessionDuration}
-              setSessionDuration={setSessionDuration}
-              sessionEndTime={sessionEndTime}
-            />
-          </TabsContent>
-        </Tabs>
+        <div className="w-full max-w-7xl mx-auto space-y-6">
+          <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
+            <h2 className="text-2xl font-bold font-headline">{selectedCourse.name}</h2>
+            <div className="w-full sm:w-auto min-w-64">
+              <Select onValueChange={handleCourseChange} value={selectedCourseId} disabled={sessionActive}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a course" />
+                </SelectTrigger>
+                <SelectContent>
+                  {courses.map((course) => (
+                    <SelectItem key={course.id} value={course.id}>
+                      {course.code}: {course.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Tabs defaultValue="student" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 max-w-md mx-auto">
+              <TabsTrigger value="student">Student</TabsTrigger>
+              <TabsTrigger value="lecturer">Lecturer</TabsTrigger>
+            </TabsList>
+            <TabsContent value="student">
+              <StudentView
+                students={selectedCourse.students}
+                onSignIn={handleSignIn}
+                isSessionActive={sessionActive}
+                lecturerLocation={lecturerLocation}
+                sessionRadius={sessionRadius}
+                sessionEndTime={sessionEndTime}
+                courseName={selectedCourse.name}
+              />
+            </TabsContent>
+            <TabsContent value="lecturer">
+              <LecturerDashboard
+                students={selectedCourse.students}
+                signedInStudents={signedInStudents}
+                isSessionActive={sessionActive}
+                onToggleSession={toggleSession}
+                onManualAttendanceToggle={handleManualAttendanceToggle}
+                sessionRadius={sessionRadius}
+                setSessionRadius={setSessionRadius}
+                sessionDuration={sessionDuration}
+                setSessionDuration={setSessionDuration}
+                sessionEndTime={sessionEndTime}
+                attendanceThreshold={selectedCourse.attendanceThreshold}
+              />
+            </TabsContent>
+          </Tabs>
+        </div>
       </main>
     </div>
   );
