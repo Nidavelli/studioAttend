@@ -19,6 +19,7 @@ import { findImage, COURSE_NAME } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import type { Location } from '@/app/page';
 import { StudentAttendanceReport } from './student-attendance-report';
+import { generateSimpleId } from '@/lib/utils';
 
 
 type SignInStep = 'idle' | 'locating' | 'authenticating' | 'success' | 'error';
@@ -26,12 +27,10 @@ type SignInStep = 'idle' | 'locating' | 'authenticating' | 'success' | 'error';
 const stepMessages: Record<SignInStep, { text: string; icon: React.ReactNode }> = {
   idle: { text: 'Sign In', icon: null },
   locating: { text: 'Verifying Location...', icon: <MapPin className="animate-pulse" /> },
-  authenticating: { text: 'Authenticating...', icon: <Fingerprint className="animate-pulse" /> },
+  authenticating: { text: 'Authenticating Device...', icon: <Fingerprint className="animate-pulse" /> },
   success: { text: 'Signed In', icon: <CheckCircle /> },
   error: { text: 'Sign In Failed', icon: <XCircle /> },
 };
-
-const MAX_DISTANCE_METERS = 100;
 
 // Haversine formula to calculate distance between two lat/lon points
 function getDistance(loc1: Location, loc2: Location) {
@@ -55,16 +54,24 @@ export function StudentView({
   onSignIn,
   isSessionActive,
   lecturerLocation,
+  sessionRadius,
 }: {
   students: Student[];
-  onSignIn: (studentId: string) => void;
+  onSignIn: (studentId: string, deviceId: string) => void;
   isSessionActive: boolean;
   lecturerLocation: Location | null;
+  sessionRadius: number;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
   const [showSheet, setShowSheet] = useState(false);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  React.useEffect(() => {
+    // Generate a simple device ID on component mount
+    setDeviceId(generateSimpleId());
+  }, []);
 
   const selectedStudent = useMemo(
     () => students.find((s) => s.id === selectedStudentId),
@@ -72,11 +79,11 @@ export function StudentView({
   );
 
   const handleSignIn = async () => {
-    if (!selectedStudent || !lecturerLocation) {
+    if (!selectedStudent || !lecturerLocation || !deviceId) {
         toast({
             variant: "destructive",
             title: "Sign-in Error",
-            description: "Lecturer has not started the session or location is not set.",
+            description: "Session not active or device not ready.",
         });
         return;
     }
@@ -99,7 +106,7 @@ export function StudentView({
 
         const distance = getDistance(lecturerLocation, studentLocation);
 
-        if (distance > MAX_DISTANCE_METERS) {
+        if (distance > sessionRadius) {
             toast({
                 variant: "destructive",
                 title: "Location Error",
@@ -113,7 +120,7 @@ export function StudentView({
         setSignInStep('authenticating');
         await new Promise((resolve) => setTimeout(resolve, 1500));
         
-        onSignIn(selectedStudent.id);
+        onSignIn(selectedStudent.id, deviceId);
         setSignInStep('success');
         setShowSheet(true);
     

@@ -11,7 +11,11 @@ import type { SignedInStudent, Location } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { MapPin } from 'lucide-react';
+import { MapPin, AlertTriangle, Target } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 export function LecturerDashboard({
   students,
@@ -20,6 +24,8 @@ export function LecturerDashboard({
   onToggleSession,
   onManualAttendanceToggle,
   lecturerLocation,
+  sessionRadius,
+  setSessionRadius,
 }: {
   students: Student[];
   signedInStudents: SignedInStudent[];
@@ -27,6 +33,8 @@ export function LecturerDashboard({
   onToggleSession: () => void;
   onManualAttendanceToggle: (studentId: string, week: string) => void;
   lecturerLocation: Location | null;
+  sessionRadius: number;
+  setSessionRadius: (radius: number) => void;
 }) {
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
@@ -36,22 +44,39 @@ export function LecturerDashboard({
           <CardDescription>Start or end the attendance session.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
+          <div className="w-full space-y-2">
+            <Label htmlFor="radius">Session Radius (meters)</Label>
+            <Input 
+              id="radius" 
+              type="number"
+              value={sessionRadius}
+              onChange={(e) => setSessionRadius(Number(e.target.value))}
+              placeholder="e.g. 100"
+              disabled={isSessionActive}
+            />
+          </div>
+
           <div className="flex items-center gap-2">
             <span className={`h-3 w-3 rounded-full ${isSessionActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
             <span className="font-medium">{isSessionActive ? 'Session Active' : 'Session Inactive'}</span>
           </div>
+
           <Button onClick={onToggleSession} className="w-full" variant={isSessionActive ? 'destructive' : 'default'}>
             {isSessionActive ? 'End Session' : 'Start Session'}
           </Button>
 
-          {lecturerLocation && (
+          {isSessionActive && lecturerLocation && (
             <>
               <Separator className="my-2"/>
-              <div className="w-full text-center p-2 rounded-lg bg-muted">
+              <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
                 <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
                 <p className="text-xs text-muted-foreground font-mono">
                   Lat: {lecturerLocation.latitude.toFixed(5)}, Lon: {lecturerLocation.longitude.toFixed(5)}
                 </p>
+                <div className="flex items-center justify-center gap-2 text-xs">
+                  <Target className="h-3 w-3"/>
+                  <span className="font-mono">{sessionRadius}m Radius</span>
+                </div>
               </div>
             </>
           )}
@@ -85,9 +110,21 @@ export function LecturerDashboard({
                               <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <span className="font-medium">{student.name}</span>
+                            {student.isDuplicateDevice && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Signed in from a previously used device.</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">{student.signedInAt}</TableCell>
+                        <TableCell className="text-right font-mono">{student.signedInAt}</TableCell>
                       </TableRow>
                     );
                   })

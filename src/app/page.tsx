@@ -7,13 +7,15 @@ import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import type { Student } from '@/lib/data';
 import { students as initialStudents } from '@/lib/data';
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast";
+import { generateSimpleId } from '@/lib/utils';
 
 export type SignedInStudent = {
   id: string;
   name: string;
   avatarId: string;
   signedInAt: string;
+  isDuplicateDevice: boolean;
 };
 
 export type Location = {
@@ -26,18 +28,25 @@ export default function Home() {
   const [sessionActive, setSessionActive] = useState(false);
   const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
   const [lecturerLocation, setLecturerLocation] = useState<Location | null>(null);
+  const [sessionRadius, setSessionRadius] = useState<number>(100);
+  const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
-  const handleSignIn = (studentId: string) => {
+  const handleSignIn = (studentId: string, deviceId: string) => {
     const student = students.find((s) => s.id === studentId);
     if (student && !signedInStudents.some((s) => s.id === studentId)) {
+      const isDuplicate = usedDeviceIds.has(deviceId);
+
       const newSignedInStudent: SignedInStudent = {
         id: student.id,
         name: student.name,
         avatarId: student.avatarId,
         signedInAt: new Date().toLocaleTimeString(),
+        isDuplicateDevice: isDuplicate,
       };
+
       setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
+      setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
       
       const updatedStudents = students.map(s => {
         if (s.id === studentId) {
@@ -68,6 +77,7 @@ export default function Home() {
       setSessionActive(false);
       setSignedInStudents([]);
       setLecturerLocation(null);
+      setUsedDeviceIds(new Set());
     } else {
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
@@ -111,6 +121,7 @@ export default function Home() {
               onSignIn={handleSignIn}
               isSessionActive={sessionActive}
               lecturerLocation={lecturerLocation}
+              sessionRadius={sessionRadius}
             />
           </TabsContent>
           <TabsContent value="lecturer">
@@ -121,6 +132,8 @@ export default function Home() {
               onToggleSession={toggleSession}
               onManualAttendanceToggle={handleManualAttendanceToggle}
               lecturerLocation={lecturerLocation}
+              sessionRadius={sessionRadius}
+              setSessionRadius={setSessionRadius}
             />
           </TabsContent>
         </Tabs>
