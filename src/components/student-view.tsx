@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle, Timer, ShieldCheck } from 'lucide-react';
+import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle, Timer, ShieldCheck, AlertTriangle } from 'lucide-react';
 import type { Student } from '@/lib/data';
 import { findImage } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
@@ -106,6 +106,7 @@ export function StudentView({
   const [selectedStudentId, setSelectedStudentId] = React.useState<string | null>(null);
   const [signInStep, setSignInStep] = React.useState<SignInStep>('idle');
   const [deviceId, setDeviceId] = React.useState<string | null>(null);
+  const [locationError, setLocationError] = React.useState<string | null>(null);
   const { toast } = useToast();
 
   React.useEffect(() => {
@@ -118,6 +119,7 @@ export function StudentView({
   
   const handleStudentSelect = (studentId: string) => {
     setSelectedStudentId(studentId);
+    setLocationError(null);
   }
 
   const selectedStudent = React.useMemo(
@@ -149,7 +151,7 @@ export function StudentView({
         if (!isSupported) {
             toast({
                 title: "Biometrics Not Supported",
-                description: "Continuing with standard sign-in.",
+                description: "Your device does not support biometric verification. Continuing with standard sign-in.",
             });
             recordAttendance();
             return;
@@ -194,6 +196,8 @@ export function StudentView({
   };
 
   const handleSignIn = async () => {
+    setLocationError(null);
+
     if (!selectedStudent || !lecturerLocation || !deviceId) {
         toast({
             variant: "destructive",
@@ -217,7 +221,7 @@ export function StudentView({
     setSignInStep('locating');
     
     if (!('geolocation' in navigator)) {
-        toast({ variant: "destructive", title: "Location Error", description: "Geolocation is not supported by your browser." });
+        setLocationError("Your browser does not support Geolocation. Please ask your lecturer to mark you as present manually.");
         setSignInStep('error');
         resetSignIn();
         return;
@@ -233,11 +237,7 @@ export function StudentView({
         const distance = getDistance(lecturerLocation, studentLocation);
 
         if (distance > sessionRadius) {
-            toast({
-                variant: "destructive",
-                title: "Location Error",
-                description: `You are too far from the classroom. (Distance: ${Math.round(distance)}m)`,
-            });
+            setLocationError(`You appear to be too far from the classroom (${Math.round(distance)}m away). Please move closer or ask your lecturer to mark you as present manually.`);
             setSignInStep('error');
             resetSignIn();
             return;
@@ -247,14 +247,11 @@ export function StudentView({
         handleBiometricAuth();
       },
       (error) => {
-        toast({
-            variant: "destructive",
-            title: "Location Error",
-            description: `Could not get your location: ${error.message}`,
-        });
+        setLocationError(`Your location could not be determined. This can happen on devices without a GPS chip or when using Wi-Fi-based location. Please ask your lecturer to mark you as present manually.`);
         setSignInStep('error');
         resetSignIn();
-      }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
@@ -264,6 +261,7 @@ export function StudentView({
     <div className="mt-8 flex flex-col items-center gap-8">
       {!isSessionActive ? (
         <Alert variant="destructive" className="max-w-md">
+          <AlertTriangle className="h-4 w-4" />
           <AlertTitle>No Active Session</AlertTitle>
           <AlertDescription>
             The lecturer has not started an attendance session. Please wait.
@@ -271,6 +269,16 @@ export function StudentView({
         </Alert>
       ) : (
         sessionEndTime && <CountdownTimer endTime={sessionEndTime} />
+      )}
+
+      {locationError && (
+        <Alert variant="destructive" className="max-w-md">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Location Verification Failed</AlertTitle>
+          <AlertDescription>
+            {locationError}
+          </AlertDescription>
+        </Alert>
       )}
 
 
