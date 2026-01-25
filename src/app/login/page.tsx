@@ -9,9 +9,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
-  isSignInWithWebAuthnSupported,
   signInWithWebAuthn,
-  linkWithCredential,
   User,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -42,8 +40,22 @@ export default function LoginPage() {
   
   const [isPasskeySupported, setIsPasskeySupported] = useState(false);
   React.useEffect(() => {
-    isSignInWithWebAuthnSupported(auth).then(setIsPasskeySupported);
-  }, [auth]);
+    const checkSupport = async () => {
+      if (window.PublicKeyCredential &&
+          typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+        try {
+          const isSupported = await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+          setIsPasskeySupported(isSupported);
+        } catch (e) {
+          console.error("Error checking passkey support:", e);
+          setIsPasskeySupported(false);
+        }
+      } else {
+        setIsPasskeySupported(false);
+      }
+    };
+    checkSupport();
+  }, []);
 
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
