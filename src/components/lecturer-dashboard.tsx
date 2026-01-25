@@ -48,6 +48,25 @@ const CountdownTimer = ({ endTime }: { endTime: Date }) => {
   );
 };
 
+const LocationMap = ({ location }: { location: GeolocationCoordinates }) => {
+  const { lat, lng } = location;
+  const delta = 0.002;
+  const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
+
+  return (
+    <div className="w-full space-y-2">
+        <Label>Location Preview</Label>
+        <iframe
+            className="w-full h-40 rounded-md border"
+            loading="lazy"
+            allowFullScreen
+            src={mapUrl}
+        ></iframe>
+    </div>
+  );
+};
+
 
 export function LecturerDashboard({
   students,
@@ -151,6 +170,9 @@ export function LecturerDashboard({
                         </Button>
                     </div>
                 </div>
+
+                {lecturerLocation && <LocationMap location={lecturerLocation} />}
+
                  <div className="space-y-2">
                     <Label htmlFor="radius">Radius (meters)</Label>
                     <Input 
