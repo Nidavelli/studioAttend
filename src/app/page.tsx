@@ -21,11 +21,6 @@ export type SignedInStudent = {
   isDuplicateDevice: boolean;
 };
 
-export type Location = {
-  latitude: number;
-  longitude: number;
-};
-
 export default function Home() {
   const { user, loading } = useUser();
   const router = useRouter();
@@ -38,9 +33,8 @@ export default function Home() {
   }, [courses, selectedCourseId]);
 
   const [sessionActive, setSessionActive] = useState(false);
+  const [sessionPin, setSessionPin] = useState<string>('');
   const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
-  const [lecturerLocation, setLecturerLocation] = useState<Location | null>(null);
-  const [sessionRadius, setSessionRadius] = useState<number>(100);
   const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
   const [sessionDuration, setSessionDuration] = useState<number>(15);
   const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
@@ -54,9 +48,12 @@ export default function Home() {
 
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let timerInterval: NodeJS.Timeout;
+    let pinInterval: NodeJS.Timeout;
+
     if (sessionActive && sessionEndTime) {
-      interval = setInterval(() => {
+      // Timer to end the session
+      timerInterval = setInterval(() => {
         if (new Date() > sessionEndTime) {
           endSession();
           toast({
@@ -65,16 +62,27 @@ export default function Home() {
           });
         }
       }, 1000);
+      
+      // Timer to update the PIN
+      const generateNewPin = () => {
+        const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+        setSessionPin(newPin);
+      };
+      generateNewPin(); // Generate initial PIN
+      pinInterval = setInterval(generateNewPin, 15000); // Generate new PIN every 15 seconds
     }
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(timerInterval);
+      clearInterval(pinInterval);
+    };
   }, [sessionActive, sessionEndTime, toast]);
   
   const endSession = () => {
     setSessionActive(false);
     setSignedInStudents([]);
-    setLecturerLocation(null);
     setUsedDeviceIds(new Set());
     setSessionEndTime(null);
+    setSessionPin('');
   };
 
   const handleCourseChange = (courseId: string) => {
@@ -89,7 +97,7 @@ export default function Home() {
     setSelectedCourseId(courseId);
   };
 
-  const handleSignIn = (studentId: string, deviceId: string): Student | null => {
+  const handleSignIn = (studentId: string, deviceId: string, pin: string): Student | null => {
     if (sessionEndTime && new Date() > sessionEndTime) {
         toast({
             variant: "destructive",
@@ -98,6 +106,15 @@ export default function Home() {
         });
         setSessionActive(false);
         return null;
+    }
+
+    if (pin !== sessionPin) {
+      toast({
+        variant: 'destructive',
+        title: 'Incorrect PIN',
+        description: 'The PIN you entered is incorrect or has expired. Please try again.',
+      });
+      return null;
     }
 
     const course = courses.find(c => c.id === selectedCourseId);
@@ -184,32 +201,9 @@ export default function Home() {
     if (sessionActive) {
       endSession();
     } else {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            setLecturerLocation({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            });
-            const endTime = new Date(new Date().getTime() + sessionDuration * 60000);
-            setSessionEndTime(endTime);
-            setSessionActive(true);
-          },
-          (error) => {
-            toast({
-              variant: "destructive",
-              title: "Location Error",
-              description: `Could not retrieve lecturer's location: ${error.message}`,
-            });
-          }
-        );
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Unsupported Browser",
-          description: "Geolocation is not supported by your browser.",
-        });
-      }
+      const endTime = new Date(new Date().getTime() + sessionDuration * 60000);
+      setSessionEndTime(endTime);
+      setSessionActive(true);
     }
   };
 
@@ -259,8 +253,6 @@ export default function Home() {
                 students={selectedCourse.students}
                 onSignIn={handleSignIn}
                 isSessionActive={sessionActive}
-                lecturerLocation={lecturerLocation}
-                sessionRadius={sessionRadius}
                 sessionEndTime={sessionEndTime}
                 courseName={selectedCourse.name}
                 studentForReport={studentForReport}
@@ -270,15 +262,15 @@ export default function Home() {
             <TabsContent value="lecturer">
               <LecturerDashboard
                 students={selectedCourse.students}
+                courseName={selectedCourse.name}
                 signedInStudents={signedInStudents}
                 isSessionActive={sessionActive}
                 onToggleSession={toggleSession}
                 onManualAttendanceToggle={handleManualAttendanceToggle}
-                sessionRadius={sessionRadius}
-                setSessionRadius={setSessionRadius}
                 sessionDuration={sessionDuration}
                 setSessionDuration={setSessionDuration}
                 sessionEndTime={sessionEndTime}
+                sessionPin={sessionPin}
                 attendanceThreshold={selectedCourse.attendanceThreshold}
               />
             </TabsContent>

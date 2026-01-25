@@ -1,17 +1,19 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import QRCode from "react-qr-code";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import type { Student } from '@/lib/data';
-import type { SignedInStudent, Location } from '@/app/page';
+import type { SignedInStudent } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { MapPin, AlertTriangle, Target, Timer } from 'lucide-react';
+import { AlertTriangle, Timer, QrCode } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -38,8 +40,8 @@ const CountdownTimer = ({ endTime }: { endTime: Date }) => {
   }, [endTime]);
 
   return (
-      <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
-        <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><Timer className="h-4 w-4"/> Time Remaining</h4>
+      <div className="w-full text-center p-2 rounded-lg bg-muted space-y-1">
+        <h4 className="font-semibold text-xs flex items-center justify-center gap-2"><Timer className="h-4 w-4"/> TIME REMAINING</h4>
         <div className="text-2xl font-mono font-bold tracking-widest">{timeLeft}</div>
       </div>
   );
@@ -48,27 +50,27 @@ const CountdownTimer = ({ endTime }: { endTime: Date }) => {
 
 export function LecturerDashboard({
   students,
+  courseName,
   signedInStudents,
   isSessionActive,
   onToggleSession,
   onManualAttendanceToggle,
-  sessionRadius,
-  setSessionRadius,
   sessionDuration,
   setSessionDuration,
   sessionEndTime,
+  sessionPin,
   attendanceThreshold,
 }: {
   students: Student[];
+  courseName: string;
   signedInStudents: SignedInStudent[];
   isSessionActive: boolean;
   onToggleSession: () => void;
   onManualAttendanceToggle: (studentId: string, week: string) => void;
-  sessionRadius: number;
-  setSessionRadius: (radius: number) => void;
   sessionDuration: number;
   setSessionDuration: (duration: number) => void;
   sessionEndTime: Date | null;
+  sessionPin: string;
   attendanceThreshold: number;
 }) {
 
@@ -80,58 +82,70 @@ export function LecturerDashboard({
           <CardDescription>Start or end the attendance session.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
-          <div className="w-full grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="radius">Radius (m)</Label>
-              <Input 
-                id="radius" 
-                type="number"
-                value={sessionRadius}
-                onChange={(e) => setSessionRadius(Number(e.target.value))}
-                placeholder="e.g. 100"
-                disabled={isSessionActive}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="duration">Duration (min)</Label>
-              <Input 
-                id="duration" 
-                type="number"
-                value={sessionDuration}
-                onChange={(e) => setSessionDuration(Number(e.target.value))}
-                placeholder="e.g. 15"
-                disabled={isSessionActive}
-              />
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2 pt-2">
-            <span className={`h-3 w-3 rounded-full ${isSessionActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-            <span className="font-medium">{isSessionActive ? 'Session Active' : 'Session Inactive'}</span>
-          </div>
-
-          <Button onClick={onToggleSession} className="w-full" variant={isSessionActive ? 'destructive' : 'default'}>
-            {isSessionActive ? 'End Session' : 'Start Session'}
-          </Button>
-
-          {isSessionActive && (
+          {!isSessionActive ? (
             <>
-              <Separator className="my-2"/>
-              <div className="w-full text-center p-2 rounded-lg bg-muted space-y-2">
-                <h4 className="font-semibold text-sm flex items-center justify-center gap-2"><MapPin className="h-4 w-4"/> Location Set</h4>
-                <div className="flex items-center justify-center gap-2 text-xs pt-2">
-                  <Target className="h-3 w-3"/>
-                  <span className="font-mono">{sessionRadius}m Radius</span>
-                </div>
+              <div className="w-full space-y-2">
+                <Label htmlFor="duration">Duration (min)</Label>
+                <Input 
+                  id="duration" 
+                  type="number"
+                  value={sessionDuration}
+                  onChange={(e) => setSessionDuration(Number(e.target.value))}
+                  placeholder="e.g. 15"
+                  disabled={isSessionActive}
+                />
               </div>
-               {sessionEndTime && <CountdownTimer endTime={sessionEndTime} />}
+              <div className="flex items-center gap-2 pt-2">
+                <span className={`h-3 w-3 rounded-full bg-red-500`}></span>
+                <span className="font-medium">Session Inactive</span>
+              </div>
+              <Button onClick={onToggleSession} className="w-full">
+                Start Session
+              </Button>
             </>
+          ) : (
+             <>
+               <div className="flex items-center gap-2">
+                  <span className={`h-3 w-3 rounded-full bg-green-500 animate-pulse`}></span>
+                  <span className="font-medium">Session Active</span>
+               </div>
+               <Button onClick={onToggleSession} className="w-full" variant="destructive">
+                  End Session
+               </Button>
+               {sessionEndTime && <CountdownTimer endTime={sessionEndTime} />}
+             </>
           )}
 
         </CardContent>
       </Card>
       
       <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle className="font-headline">Live Session Details</CardTitle>
+          <CardDescription>Scan QR and enter the PIN to sign in.</CardDescription>
+        </CardHeader>
+        <CardContent>
+           {isSessionActive ? (
+            <div className="flex flex-col md:flex-row items-center justify-center gap-6">
+                <div className="bg-white p-4 rounded-lg">
+                    <QRCode value={courseName} size={160} />
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                    <p className="text-muted-foreground text-sm">CURRENT PIN</p>
+                    <p className="text-6xl font-mono font-bold tracking-widest text-primary animate-pulse">{sessionPin}</p>
+                    <p className="text-muted-foreground text-xs mt-2">PIN refreshes every 15 seconds</p>
+                </div>
+            </div>
+           ) : (
+             <div className="text-center text-muted-foreground h-48 flex flex-col justify-center items-center">
+                <QrCode className="h-10 w-10 mb-4"/>
+                <p>Start a session to display QR Code and PIN.</p>
+             </div>
+           )}
+        </CardContent>
+      </Card>
+
+      <Card className="md:col-span-2 lg:col-span-3">
         <CardHeader>
           <CardTitle className="font-headline">Live Attendance Ledger</CardTitle>
           <CardDescription>Students who have signed in for the current session.</CardDescription>

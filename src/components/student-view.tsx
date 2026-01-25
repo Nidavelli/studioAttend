@@ -1,7 +1,7 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Select,
   SelectContent,
@@ -11,44 +11,21 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, MapPin, CheckCircle, XCircle, Timer, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Loader2, Fingerprint, CheckCircle, XCircle, Timer, ShieldCheck, AlertTriangle, QrCode, ScanLine, Pin } from 'lucide-react';
 import type { Student } from '@/lib/data';
 import { findImage } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
-import type { Location } from '@/app/page';
 import { StudentAttendanceReport } from './student-attendance-report';
 import { generateSimpleId } from '@/lib/utils';
+import { Html5Qrcode, type Html5QrcodeResult } from 'html5-qrcode';
 
 
-type SignInStep = 'idle' | 'locating' | 'biometric' | 'recording' | 'success' | 'error';
+type SignInStep = 'idle' | 'scanning' | 'pinEntry' | 'biometric' | 'recording' | 'success' | 'error';
 
-const stepMessages: Record<SignInStep, { text: string; icon: React.ReactNode }> = {
-  idle: { text: 'Sign In', icon: null },
-  locating: { text: 'Verifying Location...', icon: <MapPin className="animate-pulse" /> },
-  biometric: { text: 'Waiting for Biometric Scan...', icon: <Fingerprint className="animate-pulse" /> },
-  recording: { text: 'Recording Attendance...', icon: <ShieldCheck className="animate-pulse" /> },
-  success: { text: 'Signed In Successfully', icon: <CheckCircle /> },
-  error: { text: 'Sign In Failed', icon: <XCircle /> },
-};
-
-// Haversine formula to calculate distance between two lat/lon points
-function getDistance(loc1: Location, loc2: Location) {
-  const R = 6371e3; // metres
-  const φ1 = loc1.latitude * Math.PI / 180;
-  const φ2 = loc2.latitude * Math.PI / 180;
-  const Δφ = (loc2.latitude - loc1.latitude) * Math.PI / 180;
-  const Δλ = (loc2.longitude - loc1.longitude) * Math.PI / 180;
-
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
-}
 
 const CountdownTimer = ({ endTime }: { endTime: Date }) => {
   const [timeLeft, setTimeLeft] = React.useState('');
@@ -86,40 +63,71 @@ export function StudentView({
   students,
   onSignIn,
   isSessionActive,
-  lecturerLocation,
-  sessionRadius,
   sessionEndTime,
   courseName,
   studentForReport,
   onCloseReport,
 }: {
   students: Student[];
-  onSignIn: (studentId: string, deviceId: string) => Student | null;
+  onSignIn: (studentId: string, deviceId: string, pin: string) => Student | null;
   isSessionActive: boolean;
-  lecturerLocation: Location | null;
-  sessionRadius: number;
   sessionEndTime: Date | null;
   courseName: string;
   studentForReport: Student | null;
   onCloseReport: () => void;
 }) {
-  const [selectedStudentId, setSelectedStudentId] = React.useState<string | null>(null);
-  const [signInStep, setSignInStep] = React.useState<SignInStep>('idle');
-  const [deviceId, setDeviceId] = React.useState<string | null>(null);
-  const [locationError, setLocationError] = React.useState<string | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [signInStep, setSignInStep] = useState<SignInStep>('idle');
+  const [pin, setPin] = useState('');
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const { toast } = useToast();
+  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const qrReaderId = "qr-reader";
 
-  React.useEffect(() => {
-    // Generate a simple device ID on component mount
+  useEffect(() => {
     setDeviceId(generateSimpleId());
-    // Reset student selection when course changes
     setSelectedStudentId(null);
     setSignInStep('idle');
   }, [students]);
+
+  useEffect(() => {
+    if (signInStep === 'scanning' && selectedStudentId) {
+      if (!html5QrCodeRef.current) {
+        html5QrCodeRef.current = new Html5Qrcode(qrReaderId);
+      }
+      const qrCode = html5QrCodeRef.current;
+      
+      qrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText: string, result: Html5QrcodeResult) => {
+          // on success
+          if (qrCode.isScanning) {
+            qrCode.stop().then(() => {
+              setSignInStep('pinEntry');
+              toast({ title: "QR Code Scanned", description: `Scanned: ${decodedText}` });
+            }).catch(err => console.error("Failed to stop scanner", err));
+          }
+        },
+        (errorMessage: string) => {
+          // on error
+        }
+      ).catch(err => {
+        toast({ variant: 'destructive', title: 'Camera Error', description: 'Could not start QR scanner. Please grant camera permissions.' });
+        setSignInStep('idle');
+      });
+    }
+
+    return () => {
+      if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+        html5QrCodeRef.current.stop().catch(err => console.error("Failed to stop scanner on cleanup", err));
+      }
+    };
+  }, [signInStep, selectedStudentId, toast]);
   
   const handleStudentSelect = (studentId: string) => {
+    if (signInStep !== 'idle') return;
     setSelectedStudentId(studentId);
-    setLocationError(null);
   }
 
   const selectedStudent = React.useMemo(
@@ -127,20 +135,22 @@ export function StudentView({
     [selectedStudentId, students]
   );
   
-  const resetSignIn = (delay = 3000) => {
-    setTimeout(() => setSignInStep('idle'), delay);
+  const resetSignInFlow = () => {
+    setSignInStep('idle');
+    setPin('');
   };
 
   const recordAttendance = () => {
     setSignInStep('recording');
     setTimeout(() => {
-      const updatedStudent = onSignIn(selectedStudent!.id, deviceId!);
+      const updatedStudent = onSignIn(selectedStudent!.id, deviceId!, pin);
       if (updatedStudent) {
         setSignInStep('success');
+         setTimeout(() => resetSignInFlow(), 3000);
       } else {
         setSignInStep('error');
+        setTimeout(() => setSignInStep('pinEntry'), 3000);
       }
-      resetSignIn();
     }, 500);
   };
 
@@ -150,8 +160,8 @@ export function StudentView({
         const isSupported = await (window.PublicKeyCredential as any)?.isUserVerifyingPlatformAuthenticatorAvailable?.();
         if (!isSupported) {
             toast({
-                title: "Biometrics Not Supported",
-                description: "Your device does not support biometric verification. Continuing with standard sign-in.",
+                title: "Biometrics Not Required",
+                description: "This device doesn't support biometrics. Continuing sign-in.",
             });
             recordAttendance();
             return;
@@ -188,74 +198,105 @@ export function StudentView({
         toast({
             variant: "destructive",
             title: "Biometric Failed",
-            description: error.name === 'NotAllowedError' ? 'Authentication was canceled or not permitted.' : 'Could not verify your identity.',
+            description: error.name === 'NotAllowedError' ? 'Authentication was canceled.' : 'Could not verify your identity.',
         });
-        setSignInStep('error');
-        resetSignIn();
+        setSignInStep('pinEntry');
     }
   };
 
-  const handleSignIn = async () => {
-    setLocationError(null);
-
-    if (!selectedStudent || !lecturerLocation || !deviceId) {
-        toast({
-            variant: "destructive",
-            title: "Sign-in Error",
-            description: "Session not active or device not ready.",
-        });
-        return;
-    }
-    
-    if (sessionEndTime && new Date() > sessionEndTime) {
-      toast({
-        variant: "destructive",
-        title: "Session Expired",
-        description: "The attendance session has ended.",
-      });
-      setSignInStep('error');
-      resetSignIn();
+  const handleSubmitPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pin.length !== 4) {
+      toast({ variant: 'destructive', title: 'Invalid PIN', description: 'Please enter a 4-digit PIN.' });
       return;
     }
-
-    setSignInStep('locating');
-    
-    if (!('geolocation' in navigator)) {
-        setLocationError("Your browser does not support Geolocation. Please ask your lecturer to mark you as present manually.");
-        setSignInStep('error');
-        resetSignIn();
-        return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const studentLocation: Location = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
-
-        const distance = getDistance(lecturerLocation, studentLocation);
-
-        if (distance > sessionRadius) {
-            setLocationError(`You appear to be too far from the classroom (${Math.round(distance)}m away). Please move closer or ask your lecturer to mark you as present manually.`);
-            setSignInStep('error');
-            resetSignIn();
-            return;
-        }
-
-        // Location is verified, now proceed to biometrics
-        handleBiometricAuth();
-      },
-      (error) => {
-        setLocationError(`Your location could not be determined. This can happen on devices without a GPS chip or when using Wi-Fi-based location. Please ask your lecturer to mark you as present manually.`);
-        setSignInStep('error');
-        resetSignIn();
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
+    handleBiometricAuth();
   };
 
   const studentAvatar = selectedStudent ? findImage(selectedStudent.avatarId) : null;
+
+  const renderStepContent = () => {
+    switch (signInStep) {
+      case 'scanning':
+        return (
+          <div className="flex flex-col items-center gap-4 w-full">
+            <p className="text-muted-foreground text-sm">Point your camera at the QR code on the main screen.</p>
+            <div id={qrReaderId} className="w-full aspect-square max-w-sm bg-muted rounded-lg overflow-hidden"/>
+            <Button variant="outline" onClick={resetSignInFlow}>Cancel</Button>
+          </div>
+        );
+      case 'pinEntry':
+        return (
+          <form onSubmit={handleSubmitPin} className="flex flex-col items-center gap-4 w-full">
+            <Pin className="h-8 w-8 text-primary" />
+            <p className="text-muted-foreground text-center">Enter the 4-digit PIN shown on the main screen.</p>
+            <Input
+              type="number"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              className="text-center text-2xl font-mono tracking-widest h-14"
+              maxLength={4}
+              required
+              autoFocus
+            />
+            <div className="flex gap-2 w-full">
+              <Button type="button" variant="outline" onClick={() => setSignInStep('scanning')} className="w-full">Back</Button>
+              <Button type="submit" className="w-full">Submit</Button>
+            </div>
+          </form>
+        );
+      case 'biometric':
+      case 'recording':
+      case 'success':
+      case 'error':
+        return (
+          <div className="flex flex-col items-center gap-4 w-full text-center p-8">
+            {signInStep === 'biometric' && <><Fingerprint className="h-10 w-10 animate-pulse" /><p>Verify with biometrics...</p></>}
+            {signInStep === 'recording' && <><Loader2 className="h-10 w-10 animate-spin" /><p>Recording attendance...</p></>}
+            {signInStep === 'success' && <><CheckCircle className="h-10 w-10 text-green-500" /><p>Sign-in Successful!</p></>}
+            {signInStep === 'error' && <><XCircle className="h-10 w-10 text-destructive" /><p>Sign-in Failed. Please check the PIN and try again.</p></>}
+          </div>
+        );
+      case 'idle':
+      default:
+        return (
+          <>
+            <Select onValueChange={handleStudentSelect} value={selectedStudentId || ''} disabled={!isSessionActive}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select your name" />
+              </SelectTrigger>
+              <SelectContent>
+                {students.map((student) => (
+                  <SelectItem key={student.id} value={student.id}>
+                    {student.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {selectedStudent && (
+              <div className="flex items-center gap-4 p-4 rounded-lg w-full">
+                <Avatar className="h-16 w-16">
+                  <AvatarImage src={studentAvatar?.imageUrl} alt={selectedStudent.name} data-ai-hint={studentAvatar?.imageHint} />
+                  <AvatarFallback>{selectedStudent.name.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <div className="font-semibold text-lg">{selectedStudent.name}</div>
+              </div>
+            )}
+            
+            <Button
+              onClick={() => setSignInStep('scanning')}
+              disabled={!selectedStudent || !isSessionActive}
+              className="w-full"
+              size="lg"
+            >
+              <ScanLine className="mr-2 h-5 w-5" />
+              Scan QR to Sign In
+            </Button>
+          </>
+        );
+    }
+  };
 
   return (
     <div className="mt-8 flex flex-col items-center gap-8">
@@ -271,56 +312,15 @@ export function StudentView({
         sessionEndTime && <CountdownTimer endTime={sessionEndTime} />
       )}
 
-      {locationError && (
-        <Alert variant="destructive" className="max-w-md">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Location Verification Failed</AlertTitle>
-          <AlertDescription>
-            {locationError}
-          </AlertDescription>
-        </Alert>
-      )}
-
-
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="font-headline text-center">Student Sign-In</CardTitle>
-          <CardDescription className="text-center">Select your name to sign in for today's class.</CardDescription>
+          <CardDescription className="text-center">
+            {signInStep === 'idle' ? "Select your name to begin." : "Follow the steps to sign in."}
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
-          <Select onValueChange={handleStudentSelect} value={selectedStudentId || ''} disabled={!isSessionActive}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select your name" />
-            </SelectTrigger>
-            <SelectContent>
-              {students.map((student) => (
-                <SelectItem key={student.id} value={student.id}>
-                  {student.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {selectedStudent && (
-            <div className="flex items-center gap-4 p-4 rounded-lg w-full">
-              <Avatar className="h-16 w-16">
-                <AvatarImage src={studentAvatar?.imageUrl} alt={selectedStudent.name} data-ai-hint={studentAvatar?.imageHint} />
-                <AvatarFallback>{selectedStudent.name.charAt(0)}</AvatarFallback>
-              </Avatar>
-              <div className="font-semibold text-lg">{selectedStudent.name}</div>
-            </div>
-          )}
-          
-          <Button
-            onClick={handleSignIn}
-            disabled={!selectedStudent || !isSessionActive || signInStep !== 'idle'}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-            size="lg"
-          >
-            {signInStep !== 'idle' && signInStep !== 'success' && signInStep !== 'error' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {stepMessages[signInStep].icon && signInStep !== 'idle' && <span className="mr-2">{stepMessages[signInStep].icon}</span>}
-            {stepMessages[signInStep].text}
-          </Button>
+          {renderStepContent()}
         </CardContent>
       </Card>
 
