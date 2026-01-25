@@ -9,7 +9,6 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
-  signInWithWebAuthn,
   User,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -28,7 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from '@/hooks/use-toast';
 import { AttendSyncIcon } from '@/components/icons';
-import { KeyRound, GraduationCap, School } from 'lucide-react';
+import { GraduationCap, School } from 'lucide-react';
 
 const provider = new GoogleAuthProvider();
 
@@ -37,25 +36,6 @@ export default function LoginPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
-  
-  const [isPasskeySupported, setIsPasskeySupported] = useState(false);
-  React.useEffect(() => {
-    const checkSupport = async () => {
-      if (window.PublicKeyCredential &&
-          typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
-        try {
-          const isSupported = await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-          setIsPasskeySupported(isSupported);
-        } catch (e) {
-          console.error("Error checking passkey support:", e);
-          setIsPasskeySupported(false);
-        }
-      } else {
-        setIsPasskeySupported(false);
-      }
-    };
-    checkSupport();
-  }, []);
 
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
@@ -121,15 +101,6 @@ export default function LoginPage() {
             role: selectedRole,
         });
         await handleSignUpSuccess(newUser);
-    } catch (error) {
-        handleAuthError(error);
-    }
-  };
-  
-  const handlePasskeySignIn = async () => {
-    try {
-        const credential = await signInWithWebAuthn(auth);
-        handleLoginSuccess(credential.user);
     } catch (error) {
         handleAuthError(error);
     }
@@ -226,12 +197,6 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-             {isPasskeySupported && (
-               <Button variant="outline" className="w-full" onClick={handlePasskeySignIn}>
-                 <KeyRound className="mr-2 h-4 w-4" />
-                 Sign in with a passkey
-               </Button>
-             )}
             <Button
               variant="outline"
               className="w-full"
