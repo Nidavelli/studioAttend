@@ -14,7 +14,8 @@ import {
   User,
   PublicKeyCredential,
 } from 'firebase/auth';
-import { useAuth } from '@/firebase/provider';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { useAuth, useFirestore } from '@/firebase/provider';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -26,14 +27,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from '@/hooks/use-toast';
 import { AttendSyncIcon } from '@/components/icons';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, GraduationCap, School } from 'lucide-react';
 
 const provider = new GoogleAuthProvider();
 
 export default function LoginPage() {
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
   
@@ -48,6 +51,10 @@ export default function LoginPage() {
   const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
+  const [signUpRole, setSignUpRole] = useState('student');
+
+  const [showRoleSelection, setShowRoleSelection] = useState(false);
+  const [newUser, setNewUser] = useState<User | null>(null);
 
 
   const handleLoginSuccess = (user: User) => {
@@ -68,11 +75,10 @@ export default function LoginPage() {
       return;
     }
     
-    // Prompt to create a passkey after sign-up
     try {
        const publicKeyCredentialCreationOptions: CredentialCreationOptions = {
         publicKey: {
-          challenge: new Uint8Array(32), // Should be generated on the server
+          challenge: new Uint8Array(32), 
           rp: {
             name: 'AttendSync',
             id: window.location.hostname,
@@ -123,9 +129,33 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     try {
       const result = await signInWithPopup(auth, provider);
-      handleLoginSuccess(result.user);
+      const userDocRef = doc(firestore, "users", result.user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (userDocSnap.exists()) {
+        handleLoginSuccess(result.user);
+      } else {
+        setNewUser(result.user);
+        setShowRoleSelection(true);
+      }
     } catch (error) {
       handleAuthError(error);
+    }
+  };
+
+  const handleRoleSelection = async (selectedRole: string) => {
+    if (!newUser) return;
+    try {
+        const userDocRef = doc(firestore, "users", newUser.uid);
+        await setDoc(userDocRef, {
+            uid: newUser.uid,
+            name: newUser.displayName,
+            email: newUser.email,
+            role: selectedRole,
+        });
+        await handleSignUpSuccess(newUser);
+    } catch (error) {
+        handleAuthError(error);
     }
   };
   
@@ -153,12 +183,63 @@ export default function LoginPage() {
     try {
       const result = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
       await updateProfile(result.user, { displayName: signUpName });
-      await result.user.reload(); // Reload user to get the updated profile
+
+      const userDocRef = doc(firestore, "users", result.user.uid);
+      await setDoc(userDocRef, {
+        uid: result.user.uid,
+        name: signUpName,
+        email: signUpEmail,
+        role: signUpRole,
+      });
+
+      await result.user.reload();
       await handleSignUpSuccess(result.user);
     } catch (error) {
       handleAuthError(error);
     }
   };
+
+  if (showRoleSelection) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <CardTitle className="font-headline">One Last Step</CardTitle>
+            <CardDescription>
+              Welcome, {newUser?.displayName}! Please select your role to finish setting up your account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+              <RadioGroup defaultValue="student" className="grid grid-cols-2 gap-4" onValueChange={setSignUpRole}>
+                <div>
+                  <RadioGroupItem value="student" id="role-student" className="peer sr-only" />
+                  <Label
+                    htmlFor="role-student"
+                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                  >
+                    <GraduationCap className="mb-3 h-6 w-6" />
+                    Student
+                  </Label>
+                </div>
+                <div>
+                  <RadioGroupItem value="lecturer" id="role-lecturer" className="peer sr-only" />
+                  <Label
+                    htmlFor="role-lecturer"
+                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                  >
+                    <School className="mb-3 h-6 w-6" />
+                    Lecturer
+                  </Label>
+                </div>
+              </RadioGroup>
+            <Button onClick={() => handleRoleSelection(signUpRole)} className="w-full">
+              Complete Registration
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
 
   return (
@@ -256,6 +337,31 @@ export default function LoginPage() {
               </TabsContent>
               <TabsContent value="signup">
                 <form onSubmit={handleEmailSignUp} className="space-y-4 pt-4">
+                   <div className="space-y-2">
+                    <Label>Your Role</Label>
+                    <RadioGroup defaultValue="student" className="grid grid-cols-2 gap-4" onValueChange={setSignUpRole}>
+                      <div>
+                        <RadioGroupItem value="student" id="r1" className="peer sr-only" />
+                        <Label
+                          htmlFor="r1"
+                          className="flex items-center justify-center gap-2 rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <GraduationCap className="h-5 w-5" />
+                          Student
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem value="lecturer" id="r2" className="peer sr-only" />
+                        <Label
+                          htmlFor="r2"
+                          className="flex items-center justify-center gap-2 rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                           <School className="h-5 w-5" />
+                          Lecturer
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="name-signup">Full Name</Label>
                     <Input

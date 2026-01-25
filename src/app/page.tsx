@@ -4,8 +4,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase/auth/use-user';
+import { useFirestore } from '@/firebase/provider';
+import { doc, getDoc } from 'firebase/firestore';
 import { Header } from '@/components/header';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StudentView, type GeolocationCoordinates } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,6 +14,7 @@ import type { Student, Course } from '@/lib/data';
 import { courses as initialCourses } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import { haversineDistance } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export type SignedInStudent = {
   id: string;
@@ -23,8 +25,13 @@ export type SignedInStudent = {
 };
 
 export default function Home() {
-  const { user, loading } = useUser();
+  const { user, loading: userLoading } = useUser();
+  const firestore = useFirestore();
   const router = useRouter();
+
+  const [role, setRole] = useState<'student' | 'lecturer' | null>(null);
+  const [isRoleLoading, setIsRoleLoading] = useState(true);
+
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [selectedCourseId, setSelectedCourseId] = useState<string>(initialCourses[0].id);
   const [studentForReport, setStudentForReport] = useState<Student | null>(null);
@@ -33,27 +40,54 @@ export default function Home() {
     return courses.find(c => c.id === selectedCourseId)!;
   }, [courses, selectedCourseId]);
 
-  // Session state
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionPin, setSessionPin] = useState<string>('');
   const [sessionDuration, setSessionDuration] = useState<number>(15);
   const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
   
-  // Location state
   const [lecturerLocation, setLecturerLocation] = useState<GeolocationCoordinates | null>(null);
-  const [radius, setRadius] = useState<number>(50); // Default radius in meters
+  const [radius, setRadius] = useState<number>(50);
 
-  // Live ledger state
   const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
   const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
   
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (userLoading) return;
+    if (!user) {
       router.push('/login');
+      return;
     }
-  }, [user, loading, router]);
+
+    const fetchRole = async () => {
+      setIsRoleLoading(true);
+      const userDocRef = doc(firestore, 'users', user.uid);
+      try {
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          setRole(userDocSnap.data().role);
+        } else {
+          console.error("User document not found. User might need to re-register or select a role.");
+          toast({
+            variant: "destructive",
+            title: "Account Error",
+            description: "Your user role could not be found. Please try logging in again.",
+          });
+          // Optional: sign out the user for a clean slate
+          // signOut(auth);
+          setRole(null);
+        }
+      } catch (error) {
+        console.error("Error fetching user role:", error);
+        setRole(null);
+      } finally {
+        setIsRoleLoading(false);
+      }
+    };
+
+    fetchRole();
+  }, [user, userLoading, router, firestore, toast]);
 
 
   useEffect(() => {
@@ -61,7 +95,6 @@ export default function Home() {
     let pinInterval: NodeJS.Timeout;
 
     if (sessionActive && sessionEndTime) {
-      // Timer to end the session
       timerInterval = setInterval(() => {
         if (new Date() > sessionEndTime) {
           endSession();
@@ -72,13 +105,12 @@ export default function Home() {
         }
       }, 1000);
       
-      // Timer to update the PIN
       const generateNewPin = () => {
         const newPin = Math.floor(1000 + Math.random() * 9000).toString();
         setSessionPin(newPin);
       };
-      generateNewPin(); // Generate initial PIN
-      pinInterval = setInterval(generateNewPin, 15000); // Generate new PIN every 15 seconds
+      generateNewPin();
+      pinInterval = setInterval(generateNewPin, 15000);
     }
     return () => {
       clearInterval(timerInterval);
@@ -243,7 +275,7 @@ export default function Home() {
     if (sessionActive) {
       endSession();
     } else {
-       if (!lecturerLocation) {
+       if (!lecturerLocation && role === 'lecturer') {
         toast({
           variant: "destructive",
           title: "Cannot Start Session",
@@ -257,24 +289,33 @@ export default function Home() {
     }
   };
 
-  if (loading || !user) {
-    return (
-      <div className="flex flex-col min-h-screen bg-background">
-        <Header />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p>Loading...</p>
-          </div>
-        </main>
-      </div>
-    );
-  }
+  const renderContent = () => {
+    if (userLoading || isRoleLoading) {
+      return (
+        <div className="w-full max-w-7xl mx-auto space-y-6 mt-8">
+            <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
+              <Skeleton className="h-8 w-64" />
+              <Skeleton className="h-10 w-full sm:w-64" />
+            </div>
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full max-w-md mx-auto" />
+              <Skeleton className="h-96 w-full" />
+            </div>
+        </div>
+      );
+    }
 
-  return (
-    <div className="flex flex-col min-h-screen bg-background">
-      <Header />
-      <main className="flex-1 p-4 sm:p-6 lg:p-8">
-        <div className="w-full max-w-7xl mx-auto space-y-6">
+    if (!role) {
+      return (
+        <div className="text-center py-10">
+          <p className="text-lg text-destructive">Error: User role not found.</p>
+          <p className="text-muted-foreground">Please try logging out and signing in again.</p>
+        </div>
+      );
+    }
+
+    return (
+       <div className="w-full max-w-7xl mx-auto space-y-6">
           <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
             <h2 className="text-2xl font-bold font-headline">{selectedCourse.name}</h2>
             <div className="w-full sm:w-auto min-w-64">
@@ -293,44 +334,47 @@ export default function Home() {
             </div>
           </div>
 
-          <Tabs defaultValue="student" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 max-w-md mx-auto">
-              <TabsTrigger value="student">Student</TabsTrigger>
-              <TabsTrigger value="lecturer">Lecturer</TabsTrigger>
-            </TabsList>
-            <TabsContent value="student">
-              <StudentView
-                students={selectedCourse.students}
-                onLocationSignIn={handleLocationSignIn}
-                onQrSignIn={handleQrSignIn}
-                isSessionActive={sessionActive}
-                sessionEndTime={sessionEndTime}
-                courseName={selectedCourse.name}
-                studentForReport={studentForReport}
-                onCloseReport={() => setStudentForReport(null)}
-              />
-            </TabsContent>
-            <TabsContent value="lecturer">
-              <LecturerDashboard
-                students={selectedCourse.students}
-                courseName={selectedCourse.name}
-                signedInStudents={signedInStudents}
-                isSessionActive={sessionActive}
-                onToggleSession={toggleSession}
-                onManualAttendanceToggle={handleManualAttendanceToggle}
-                sessionDuration={sessionDuration}
-                setSessionDuration={setSessionDuration}
-                sessionEndTime={sessionEndTime}
-                sessionPin={sessionPin}
-                attendanceThreshold={selectedCourse.attendanceThreshold}
-                lecturerLocation={lecturerLocation}
-                setLecturerLocation={setLecturerLocation}
-                radius={radius}
-                setRadius={setRadius}
-              />
-            </TabsContent>
-          </Tabs>
+          {role === 'student' && (
+            <StudentView
+              students={selectedCourse.students}
+              onLocationSignIn={handleLocationSignIn}
+              onQrSignIn={handleQrSignIn}
+              isSessionActive={sessionActive}
+              sessionEndTime={sessionEndTime}
+              courseName={selectedCourse.name}
+              studentForReport={studentForReport}
+              onCloseReport={() => setStudentForReport(null)}
+            />
+          )}
+
+          {role === 'lecturer' && (
+            <LecturerDashboard
+              students={selectedCourse.students}
+              courseName={selectedCourse.name}
+              signedInStudents={signedInStudents}
+              isSessionActive={sessionActive}
+              onToggleSession={toggleSession}
+              onManualAttendanceToggle={handleManualAttendanceToggle}
+              sessionDuration={sessionDuration}
+              setSessionDuration={setSessionDuration}
+              sessionEndTime={sessionEndTime}
+              sessionPin={sessionPin}
+              attendanceThreshold={selectedCourse.attendanceThreshold}
+              lecturerLocation={lecturerLocation}
+              setLecturerLocation={setLecturerLocation}
+              radius={radius}
+              setRadius={setRadius}
+            />
+          )}
         </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen bg-background">
+      <Header />
+      <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        {renderContent()}
       </main>
     </div>
   );
