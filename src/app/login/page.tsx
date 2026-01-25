@@ -66,10 +66,17 @@ export default function LoginPage() {
   };
 
   const handleAuthError = (error: any) => {
+    let description = error.message || 'An unexpected error occurred.';
+    if (error.code === 'auth/email-already-in-use') {
+        description = 'This email address is already in use by another account.';
+    } else if (error.code === 'permission-denied') {
+        description = 'There was a problem setting up your profile. Please check Firestore rules.';
+    }
+    
     toast({
       variant: 'destructive',
       title: 'Authentication Failed',
-      description: error.message || 'An unexpected error occurred.',
+      description: description,
     });
   };
 
@@ -102,7 +109,12 @@ export default function LoginPage() {
         });
         await handleSignUpSuccess(newUser);
     } catch (error) {
-        handleAuthError(error);
+        console.error("Error saving user role:", error);
+        toast({
+            variant: 'destructive',
+            title: 'Registration Incomplete',
+            description: 'We failed to save your role. Please try signing in again or contact support.',
+        });
     }
   };
 
@@ -118,22 +130,35 @@ export default function LoginPage() {
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    let userCredential;
     try {
-      const result = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
-      await updateProfile(result.user, { displayName: signUpName });
+      userCredential = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
+    } catch (error) {
+      handleAuthError(error);
+      return;
+    }
 
-      const userDocRef = doc(firestore, "users", result.user.uid);
+    try {
+      const user = userCredential.user;
+      await updateProfile(user, { displayName: signUpName });
+
+      const userDocRef = doc(firestore, 'users', user.uid);
       await setDoc(userDocRef, {
-        uid: result.user.uid,
+        uid: user.uid,
         name: signUpName,
         email: signUpEmail,
         role: signUpRole,
       });
 
-      await result.user.reload();
-      await handleSignUpSuccess(result.user);
+      await user.reload();
+      await handleSignUpSuccess(user);
     } catch (error) {
-      handleAuthError(error);
+        console.error("Error saving user profile:", error);
+        toast({
+            variant: 'destructive',
+            title: 'Registration Incomplete',
+            description: 'Your account was created, but we failed to save your profile information. Please contact support.',
+        });
     }
   };
 
