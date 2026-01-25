@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -12,7 +13,6 @@ import {
   signInWithWebAuthn,
   linkWithCredential,
   User,
-  PublicKeyCredential,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase/provider';
@@ -66,56 +66,11 @@ export default function LoginPage() {
   };
 
   const handleSignUpSuccess = async (user: User) => {
-    if (!isPasskeySupported) {
-       toast({
-        title: 'Sign Up Successful!',
-        description: `Welcome, ${user.displayName}!`,
-      });
-      router.push('/');
-      return;
-    }
-    
-    try {
-       const publicKeyCredentialCreationOptions: CredentialCreationOptions = {
-        publicKey: {
-          challenge: new Uint8Array(32), 
-          rp: {
-            name: 'AttendSync',
-            id: window.location.hostname,
-          },
-          user: {
-            id: new TextEncoder().encode(user.uid),
-            name: user.email!,
-            displayName: user.displayName!,
-          },
-          pubKeyCredParams: [{alg: -7, type: 'public-key' as const}],
-          authenticatorSelection: {
-            authenticatorAttachment: 'platform' as const,
-            userVerification: 'required' as const,
-          },
-          timeout: 60000,
-          attestation: 'direct' as const,
-        }
-      };
-      
-      const credential = await navigator.credentials.create(publicKeyCredentialCreationOptions);
-      const firebaseCredential = PublicKeyCredential.fromJSON(credential as any);
-      await linkWithCredential(user, firebaseCredential);
-
-      toast({
-        title: 'Sign Up Successful!',
-        description: `Welcome, ${user.displayName}! A passkey has been created for easy sign-in next time.`,
-      });
-    } catch (passkeyError: any) {
-      console.error("Passkey creation failed:", passkeyError);
-      toast({
-        title: 'Sign Up Successful!',
-        description: `Welcome, ${user.displayName}! You can create a passkey later in your profile settings.`,
-        variant: 'default'
-      });
-    } finally {
-        router.push('/');
-    }
+    toast({
+      title: 'Sign Up Successful!',
+      description: `Welcome, ${user.displayName}!`,
+    });
+    router.push('/');
   };
 
   const handleAuthError = (error: any) => {
