@@ -14,14 +14,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, CheckCircle, XCircle, Timer, AlertTriangle, QrCode, ScanLine, Pin, MapPin } from 'lucide-react';
-import type { Student } from '@/lib/data';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import { Loader2, Fingerprint, CheckCircle, XCircle, Timer, AlertTriangle, QrCode, ScanLine, Pin, MapPin, PlusCircle } from 'lucide-react';
+import type { Student, Unit } from '@/lib/data';
 import { findImage } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import { StudentAttendanceReport } from './student-attendance-report';
-import { generateSimpleId, haversineDistance } from '@/lib/utils';
+import { generateSimpleId } from '@/lib/utils';
 import { Html5Qrcode, type Html5QrcodeResult } from 'html5-qrcode';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { joinUnit } from '@/app/actions';
+import { useUser } from '@/firebase/auth/use-user';
+
 
 export type GeolocationCoordinates = {
   lat: number;
@@ -65,26 +72,79 @@ const CountdownTimer = ({ endTime }: { endTime: Date }) => {
   );
 };
 
+const joinUnitFormSchema = z.object({
+  unitCode: z.string().min(3, "Unit code must be at least 3 characters."),
+});
+
+function JoinUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
+  const { user } = useUser();
+  const { toast } = useToast();
+  const form = useForm<z.infer<typeof joinUnitFormSchema>>({
+    resolver: zodResolver(joinUnitFormSchema),
+    defaultValues: { unitCode: "" },
+  });
+
+  async function onSubmit(values: z.infer<typeof joinUnitFormSchema>) {
+     if (!user) {
+        toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to join a unit." });
+        return;
+    }
+    const result = await joinUnit(values.unitCode, user.uid);
+    if (result.success) {
+      toast({ title: "Unit Joined", description: `You have successfully joined the unit.` });
+      setOpen(false);
+      form.reset();
+    } else {
+      toast({ variant: "destructive", title: "Failed to Join", description: result.error });
+    }
+  }
+
+  return (
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+                control={form.control}
+                name="unitCode"
+                render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Unit Code</FormLabel>
+                        <FormControl>
+                            <Input placeholder="Enter the code from your lecturer" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )}
+            />
+            <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Join Unit
+            </Button>
+        </form>
+      </Form>
+  )
+}
+
 
 export function StudentView({
   students,
+  unit,
   onLocationSignIn,
   onQrSignIn,
   isSessionActive,
   sessionEndTime,
-  courseName,
   studentForReport,
   onCloseReport,
 }: {
   students: Student[];
+  unit: Unit;
   onLocationSignIn: (studentId: string, location: GeolocationCoordinates, deviceId: string) => { student: Student | null, distance?: number };
   onQrSignIn: (studentId: string, deviceId: string, pin: string) => Student | null;
   isSessionActive: boolean;
   sessionEndTime: Date | null;
-  courseName: string;
   studentForReport: Student | null;
   onCloseReport: () => void;
 }) {
+  const { user } = useUser();
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
   const [signInError, setSignInError] = useState<SignInError>(null);
@@ -93,11 +153,16 @@ export function StudentView({
   const { toast } = useToast();
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const qrReaderId = "qr-reader";
+  const [isJoinUnitOpen, setIsJoinUnitOpen] = useState(false);
 
   useEffect(() => {
     setDeviceId(generateSimpleId());
-    resetSignInFlow();
-  }, [students]);
+    // Set the current user as the selected student automatically
+    if (user) {
+      setSelectedStudentId(user.uid);
+      setSignInStep('methodChoice');
+    }
+  }, [user]);
 
   useEffect(() => {
     if (signInStep === 'scanning' && selectedStudentId) {
@@ -131,14 +196,8 @@ export function StudentView({
     };
   }, [signInStep, selectedStudentId, toast]);
   
-  const handleStudentSelect = (studentId: string) => {
-    if (signInStep !== 'idle' && signInStep !== 'methodChoice') return;
-    setSelectedStudentId(studentId);
-    setSignInStep('methodChoice');
-  }
-
   const selectedStudent = React.useMemo(
-    () => students.find((s) => s.id === selectedStudentId),
+    () => students.find((s) => s.uid === selectedStudentId),
     [selectedStudentId, students]
   );
   
@@ -151,10 +210,9 @@ export function StudentView({
   const recordQrAttendance = () => {
     setSignInStep('recording');
     setTimeout(() => {
-      const updatedStudent = onQrSignIn(selectedStudent!.id, deviceId!, pin);
+      const updatedStudent = onQrSignIn(selectedStudent!.uid, deviceId!, pin);
       if (updatedStudent) {
         setSignInStep('success');
-         setTimeout(() => resetSignInFlow(), 5000);
       } else {
         setSignInError({ title: "Sign-in Failed", description: "The PIN was incorrect or the session expired. Please try again." });
         setSignInStep('error');
@@ -180,10 +238,9 @@ export function StudentView({
         setSignInStep('recording');
         
         setTimeout(() => {
-          const { student: updatedStudent, distance } = onLocationSignIn(selectedStudent!.id, studentLocation, deviceId!);
+          const { student: updatedStudent, distance } = onLocationSignIn(selectedStudent!.uid, studentLocation, deviceId!);
           if (updatedStudent) {
             setSignInStep('success');
-            setTimeout(() => resetSignInFlow(), 5000);
           } else {
             if (distance) {
                setSignInError({ title: "Too Far Away", description: `You are approximately ${distance} meters from the classroom. Please move closer or ask your lecturer for a manual sign-in.` });
@@ -224,7 +281,7 @@ export function StudentView({
                 challenge,
                 rp: { id: window.location.hostname, name: "AttendSync" },
                 user: {
-                    id: new TextEncoder().encode(selectedStudent!.id),
+                    id: new TextEncoder().encode(selectedStudent!.uid),
                     name: selectedStudent!.email,
                     displayName: selectedStudent!.name,
                 },
@@ -263,8 +320,41 @@ export function StudentView({
   };
 
   const studentAvatar = selectedStudent ? findImage(selectedStudent.avatarId) : null;
+  
+  if (!unit) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <Card className="max-w-lg">
+          <CardHeader>
+            <CardTitle>Welcome, Student!</CardTitle>
+            <CardDescription>You are not enrolled in any units. Join a unit to see attendance sessions.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Dialog open={isJoinUnitOpen} onOpenChange={setIsJoinUnitOpen}>
+              <DialogTrigger asChild>
+                <Button><PlusCircle className="mr-2"/> Join a Unit</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Join a New Unit</DialogTitle>
+                  <DialogDescription>
+                    Enter the unit code provided by your lecturer.
+                  </DialogDescription>
+                </DialogHeader>
+                <JoinUnitForm setOpen={setIsJoinUnitOpen} />
+              </DialogContent>
+            </Dialog>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
 
   const renderStepContent = () => {
+    if (!selectedStudent) {
+      return <Loader2 className="animate-spin" />
+    }
     switch (signInStep) {
       case 'methodChoice':
         return (
@@ -280,7 +370,6 @@ export function StudentView({
                     <Button onClick={handleLocationAuth} size="lg"><MapPin className="mr-2"/>Sign In with Location</Button>
                     <Button onClick={() => setSignInStep('scanning')} size="lg" variant="outline"><QrCode className="mr-2"/>Sign In with QR Code</Button>
                 </div>
-                <Button variant="link" size="sm" onClick={() => { setSelectedStudentId(null); setSignInStep('idle'); }}>Change student</Button>
             </>
         );
       case 'locating':
@@ -344,31 +433,18 @@ export function StudentView({
         );
       case 'idle':
       default:
-        return (
-          <Select onValueChange={handleStudentSelect} value={selectedStudentId || ''} disabled={!isSessionActive}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select your name to begin" />
-            </SelectTrigger>
-            <SelectContent>
-              {students.map((student) => (
-                <SelectItem key={student.id} value={student.id}>
-                  {student.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
+        return <Loader2 className="h-10 w-10 animate-spin" />;
     }
   };
 
   return (
     <div className="mt-8 flex flex-col items-center gap-8">
       {!isSessionActive ? (
-        <Alert variant="destructive" className="max-w-md">
+        <Alert className="max-w-md">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>No Active Session</AlertTitle>
           <AlertDescription>
-            The lecturer has not started an attendance session. Please wait.
+            There are no active attendance sessions for this unit right now.
           </AlertDescription>
         </Alert>
       ) : (
@@ -379,9 +455,7 @@ export function StudentView({
         <CardHeader>
           <CardTitle className="font-headline text-center">Student Sign-In</CardTitle>
           <CardDescription className="text-center">
-            {signInStep === 'idle' && "Select your name to begin."}
-            {signInStep === 'methodChoice' && "Choose your sign-in method."}
-            {signInStep !== 'idle' && signInStep !== 'methodChoice' && "Follow the steps to sign in."}
+            {signInStep !== 'idle' && "Follow the steps to sign in."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
@@ -389,15 +463,15 @@ export function StudentView({
         </CardContent>
       </Card>
 
-      <Dialog open={!!studentForReport} onOpenChange={(isOpen) => !isOpen && onCloseReport()}>
+      <Dialog open={!!studentForReport || signInStep === 'success'} onOpenChange={(isOpen) => { if (!isOpen) { onCloseReport(); resetSignInFlow(); } }}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="font-headline">My Attendance Report</DialogTitle>
             <DialogDescription>
-              Your sign-in was successful. Here is your current attendance record for {courseName}.
+              Your sign-in was successful. Here is your current attendance record for {unit.name}.
             </DialogDescription>
           </DialogHeader>
-          {studentForReport && <StudentAttendanceReport student={studentForReport} courseName={courseName} />}
+          {studentForReport && <StudentAttendanceReport student={studentForReport} courseName={unit.name} />}
         </DialogContent>
       </Dialog>
     </div>

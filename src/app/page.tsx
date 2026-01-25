@@ -5,16 +5,18 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase/auth/use-user';
 import { useFirestore } from '@/firebase/provider';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, type DocumentData } from 'firebase/firestore';
 import { Header } from '@/components/header';
 import { StudentView, type GeolocationCoordinates } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { Student, Course } from '@/lib/data';
-import { courses as initialCourses } from '@/lib/data';
+import type { Student, Unit } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import { haversineDistance } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { PlusCircle } from 'lucide-react';
 
 export type SignedInStudent = {
   id: string;
@@ -24,21 +26,50 @@ export type SignedInStudent = {
   isDuplicateDevice: boolean;
 };
 
+// Helper to fetch multiple user documents from a list of UIDs
+async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise<Student[]> {
+  if (studentIds.length === 0) return [];
+  const students: Student[] = [];
+  // Firestore 'in' query is limited to 30 items, so we fetch in batches
+  for (let i = 0; i < studentIds.length; i += 30) {
+    const batchIds = studentIds.slice(i, i + 30);
+    const q = query(collection(firestore, 'users'), where('uid', 'in', batchIds));
+    const querySnapshot = await getDocs(q);
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      students.push({
+        uid: data.uid,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        avatarId: `student-${(students.length % 5) + 1}`, // Temporary avatar logic
+        attendance: {}, // Attendance is now managed locally in page.tsx
+      });
+    });
+  }
+  return students;
+}
+
+
 export default function Home() {
   const { user, loading: userLoading } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
+  const { toast } = useToast();
 
   const [role, setRole] = useState<'student' | 'lecturer' | null>(null);
   const [isRoleLoading, setIsRoleLoading] = useState(true);
 
-  const [courses, setCourses] = useState<Course[]>(initialCourses);
-  const [selectedCourseId, setSelectedCourseId] = useState<string>(initialCourses[0].id);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [studentsInUnit, setStudentsInUnit] = useState<Student[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  
   const [studentForReport, setStudentForReport] = useState<Student | null>(null);
 
-  const selectedCourse = useMemo(() => {
-    return courses.find(c => c.id === selectedCourseId)!;
-  }, [courses, selectedCourseId]);
+  const selectedUnit = useMemo(() => {
+    return units.find(u => u.id === selectedUnitId) || null;
+  }, [units, selectedUnitId]);
 
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionPin, setSessionPin] = useState<string>('');
@@ -50,9 +81,8 @@ export default function Home() {
 
   const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
   const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
-  
-  const { toast } = useToast();
 
+  // Effect to fetch user role
   useEffect(() => {
     if (userLoading) return;
     if (!user) {
@@ -68,14 +98,7 @@ export default function Home() {
         if (userDocSnap.exists()) {
           setRole(userDocSnap.data().role);
         } else {
-          console.error("User document not found. User might need to re-register or select a role.");
-          toast({
-            variant: "destructive",
-            title: "Account Error",
-            description: "Your user role could not be found. Please try logging in again.",
-          });
-          // Optional: sign out the user for a clean slate
-          // signOut(auth);
+          toast({ variant: "destructive", title: "Account Error", description: "Your user role could not be found." });
           setRole(null);
         }
       } catch (error) {
@@ -89,7 +112,66 @@ export default function Home() {
     fetchRole();
   }, [user, userLoading, router, firestore, toast]);
 
+  // Effect to fetch units based on role
+  useEffect(() => {
+    if (!role || !user) return;
+    
+    setIsDataLoading(true);
+    let q;
+    if (role === 'lecturer') {
+        q = query(collection(firestore, "units"), where("lecturerId", "==", user.uid));
+    } else { // student
+        q = query(collection(firestore, "units"), where("enrolledStudents", "array-contains", user.uid));
+    }
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const fetchedUnits: Unit[] = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            fetchedUnits.push({ id: doc.id, ...data } as Unit);
+        });
+        setUnits(fetchedUnits);
+        if (fetchedUnits.length > 0 && !selectedUnitId) {
+            setSelectedUnitId(fetchedUnits[0].id);
+        } else if (fetchedUnits.length === 0) {
+            setSelectedUnitId(null);
+        }
+        setIsDataLoading(false);
+    }, (error) => {
+        console.error("Error fetching units:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch units.' });
+        setIsDataLoading(false);
+    });
 
+    return () => unsubscribe();
+  }, [role, user, firestore, toast]);
+
+  // Effect to fetch students when selected unit changes
+  useEffect(() => {
+    if (!selectedUnit) {
+      setStudentsInUnit([]);
+      return;
+    };
+    
+    const fetchStudents = async () => {
+        setIsDataLoading(true);
+        const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents);
+        // Initialize or update local attendance state for students
+        setStudentsInUnit(prevStudents => {
+            return studentData.map(newStudent => {
+                const existingStudent = prevStudents.find(s => s.uid === newStudent.uid);
+                return {
+                    ...newStudent,
+                    attendance: existingStudent?.attendance || {}
+                };
+            });
+        });
+        setIsDataLoading(false);
+    }
+    fetchStudents();
+  }, [selectedUnit, firestore]);
+
+  // Session timer and PIN generation logic
   useEffect(() => {
     let timerInterval: NodeJS.Timeout;
     let pinInterval: NodeJS.Timeout;
@@ -98,17 +180,11 @@ export default function Home() {
       timerInterval = setInterval(() => {
         if (new Date() > sessionEndTime) {
           endSession();
-          toast({
-            title: "Session Ended",
-            description: "The attendance session has automatically ended.",
-          });
+          toast({ title: "Session Ended", description: "The attendance session has automatically ended." });
         }
       }, 1000);
       
-      const generateNewPin = () => {
-        const newPin = Math.floor(1000 + Math.random() * 9000).toString();
-        setSessionPin(newPin);
-      };
+      const generateNewPin = () => setSessionPin(Math.floor(1000 + Math.random() * 9000).toString());
       generateNewPin();
       pinInterval = setInterval(generateNewPin, 15000);
     }
@@ -127,75 +203,54 @@ export default function Home() {
     setLecturerLocation(null);
   };
 
-  const handleCourseChange = (courseId: string) => {
+  const handleUnitChange = (unitId: string) => {
     if (sessionActive) {
-      toast({
-        variant: "destructive",
-        title: "Cannot Change Course",
-        description: "Please end the active session before changing the course.",
-      });
+      toast({ variant: "destructive", title: "Cannot Change Unit", description: "Please end the active session before changing the unit." });
       return;
     }
-    setSelectedCourseId(courseId);
+    setSelectedUnitId(unitId);
   };
 
   const recordSuccessfulSignIn = (studentId: string, deviceId: string): Student | null => {
      if (signedInStudents.some((s) => s.id === studentId)) {
-        toast({
-            variant: "destructive",
-            title: "Already Signed In",
-            description: "You have already signed in for this session.",
-        });
-        const currentCourse = courses.find(c => c.id === selectedCourseId);
-        const currentStudent = currentCourse?.students.find(s => s.id === studentId);
-        if (currentStudent) {
-          setStudentForReport(currentStudent);
-        }
+        toast({ variant: "destructive", title: "Already Signed In", description: "You have already signed in for this session." });
+        const currentStudent = studentsInUnit.find(s => s.uid === studentId);
+        if (currentStudent) setStudentForReport(currentStudent);
         return currentStudent || null;
     }
 
-    const course = courses.find(c => c.id === selectedCourseId);
-    if (!course) return null;
-    const student = course.students.find((s) => s.id === studentId);
+    const student = studentsInUnit.find((s) => s.uid === studentId);
     if (!student) return null;
 
     const isDuplicate = usedDeviceIds.has(deviceId);
 
-    const newSignedInStudent: SignedInStudent = {
-      id: student.id,
+    setSignedInStudents((prev) => [{
+      id: student.uid,
       name: student.name,
       avatarId: student.avatarId,
       signedInAt: new Date().toLocaleTimeString(),
       isDuplicateDevice: isDuplicate,
-    };
-
-    setSignedInStudents((prev) => [newSignedInStudent, ...prev]);
+    }, ...prev]);
     setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
     
     let finalUpdatedStudent: Student | null = null;
     
-    setCourses(currentCourses => {
-      const newCourses = currentCourses.map(c => {
-        if (c.id === selectedCourseId) {
-          const updatedStudents = c.students.map(s => {
-            if (s.id === studentId) {
-              const totalWeeks = Object.keys(s.attendance).length;
-              const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
-              const newAttendance = { ...s.attendance, [nextWeek]: true };
-              finalUpdatedStudent = { ...s, attendance: newAttendance };
-              return finalUpdatedStudent;
-            }
-            return s;
-          });
-          return { ...c, students: updatedStudents };
+    setStudentsInUnit(currentStudents => {
+      const newStudents = currentStudents.map(s => {
+        if (s.uid === studentId) {
+          const totalWeeks = Object.keys(s.attendance).length;
+          const nextWeek = (totalWeeks > 0 ? Math.max(...Object.keys(s.attendance).map(Number)) : 0) + 1;
+          const newAttendance = { ...s.attendance, [nextWeek]: true };
+          finalUpdatedStudent = { ...s, attendance: newAttendance };
+          return finalUpdatedStudent;
         }
-        return c;
+        return s;
       });
 
       if (finalUpdatedStudent) {
         setStudentForReport(finalUpdatedStudent);
       }
-      return newCourses;
+      return newStudents;
     });
 
     return finalUpdatedStudent;
@@ -203,71 +258,43 @@ export default function Home() {
 
   const handleQrSignIn = (studentId: string, deviceId: string, pin: string): Student | null => {
     if (sessionEndTime && new Date() > sessionEndTime) {
-      toast({
-        variant: "destructive",
-        title: "Session Expired",
-        description: "The attendance session has ended.",
-      });
+      toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
       setSessionActive(false);
       return null;
     }
-
     if (pin !== sessionPin) {
-      toast({
-        variant: 'destructive',
-        title: 'Incorrect PIN',
-        description: 'The PIN you entered is incorrect or has expired. Please try again.',
-      });
+      toast({ variant: 'destructive', title: 'Incorrect PIN', description: 'The PIN is incorrect or has expired.' });
       return null;
     }
-    
     return recordSuccessfulSignIn(studentId, deviceId);
   };
   
   const handleLocationSignIn = (studentId: string, studentLocation: GeolocationCoordinates, deviceId: string): { student: Student | null; distance?: number } => {
     if (sessionEndTime && new Date() > sessionEndTime) {
-      toast({
-        variant: "destructive",
-        title: "Session Expired",
-        description: "The attendance session has ended.",
-      });
+      toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
       setSessionActive(false);
       return { student: null };
     }
-    
     if (!lecturerLocation) {
-        toast({
-            variant: "destructive",
-            title: "Location Not Set",
-            description: "The lecturer has not set a location for this session.",
-        });
+        toast({ variant: "destructive", title: "Location Not Set", description: "The lecturer has not set a location." });
         return { student: null };
     }
-
     const distance = haversineDistance(studentLocation, lecturerLocation);
     if (distance > radius) {
         return { student: null, distance: Math.round(distance) };
     }
-    
     const student = recordSuccessfulSignIn(studentId, deviceId);
     return { student };
   };
 
-
   const handleManualAttendanceToggle = (studentId: string, week: string) => {
-    setCourses(currentCourses => currentCourses.map(course => {
-      if (course.id === selectedCourseId) {
-        const updatedStudents = course.students.map(student => {
-          if (student.id === studentId) {
-            const newAttendance = { ...student.attendance };
-            newAttendance[week] = !newAttendance[week];
-            return { ...student, attendance: newAttendance };
-          }
-          return student;
-        });
-        return { ...course, students: updatedStudents };
+    setStudentsInUnit(currentStudents => currentStudents.map(student => {
+      if (student.uid === studentId) {
+        const newAttendance = { ...student.attendance };
+        newAttendance[week] = !newAttendance[week];
+        return { ...student, attendance: newAttendance };
       }
-      return course;
+      return student;
     }));
   };
 
@@ -276,11 +303,7 @@ export default function Home() {
       endSession();
     } else {
        if (!lecturerLocation && role === 'lecturer') {
-        toast({
-          variant: "destructive",
-          title: "Cannot Start Session",
-          description: "Please set the session location before starting.",
-        });
+        toast({ variant: "destructive", title: "Cannot Start Session", description: "Please set the session location." });
         return;
       }
       const endTime = new Date(new Date().getTime() + sessionDuration * 60000);
@@ -290,7 +313,7 @@ export default function Home() {
   };
 
   const renderContent = () => {
-    if (userLoading || isRoleLoading) {
+    if (userLoading || isRoleLoading || (role && isDataLoading)) {
       return (
         <div className="w-full max-w-7xl mx-auto space-y-6 mt-8">
             <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
@@ -309,7 +332,6 @@ export default function Home() {
       return (
         <div className="text-center py-10">
           <p className="text-lg text-destructive">Error: User role not found.</p>
-          <p className="text-muted-foreground">Please try logging out and signing in again.</p>
         </div>
       );
     }
@@ -317,31 +339,41 @@ export default function Home() {
     return (
        <div className="w-full max-w-7xl mx-auto space-y-6">
           <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
-            <h2 className="text-2xl font-bold font-headline">{selectedCourse.name}</h2>
-            <div className="w-full sm:w-auto min-w-64">
-              <Select onValueChange={handleCourseChange} value={selectedCourseId} disabled={sessionActive}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a course" />
-                </SelectTrigger>
-                <SelectContent>
-                  {courses.map((course) => (
-                    <SelectItem key={course.id} value={course.id}>
-                      {course.code}: {course.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <h2 className="text-2xl font-bold font-headline">{selectedUnit?.name || "No Unit Selected"}</h2>
+            <div className="flex items-center gap-2">
+              {role === 'lecturer' && 
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm"><PlusCircle className="mr-2 h-4 w-4"/> New Unit</Button>
+                  </DialogTrigger>
+                  {/* The content for this dialog is in LecturerDashboard */}
+                </Dialog>
+              }
+              <div className="w-full sm:w-auto min-w-64">
+                <Select onValueChange={handleUnitChange} value={selectedUnitId || ""} disabled={sessionActive}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units.map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id}>
+                        {unit.code}: {unit.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
           {role === 'student' && (
             <StudentView
-              students={selectedCourse.students}
+              students={studentsInUnit}
+              unit={selectedUnit!}
               onLocationSignIn={handleLocationSignIn}
               onQrSignIn={handleQrSignIn}
               isSessionActive={sessionActive}
               sessionEndTime={sessionEndTime}
-              courseName={selectedCourse.name}
               studentForReport={studentForReport}
               onCloseReport={() => setStudentForReport(null)}
             />
@@ -349,8 +381,8 @@ export default function Home() {
 
           {role === 'lecturer' && (
             <LecturerDashboard
-              students={selectedCourse.students}
-              courseName={selectedCourse.name}
+              students={studentsInUnit}
+              unit={selectedUnit!}
               signedInStudents={signedInStudents}
               isSessionActive={sessionActive}
               onToggleSession={toggleSession}
@@ -359,7 +391,6 @@ export default function Home() {
               setSessionDuration={setSessionDuration}
               sessionEndTime={sessionEndTime}
               sessionPin={sessionPin}
-              attendanceThreshold={selectedCourse.attendanceThreshold}
               lecturerLocation={lecturerLocation}
               setLecturerLocation={setLecturerLocation}
               radius={radius}

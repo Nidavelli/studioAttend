@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from 'react';
@@ -77,17 +78,17 @@ export function AttendanceReport({ students, onManualAttendanceToggle }: { stude
             </TableHeader>
             <TableBody>
               {students.map((student) => (
-                <TableRow key={student.id}>
-                  <TableCell className="font-mono">{student.id}</TableCell>
+                <TableRow key={student.uid}>
+                  <TableCell className="font-mono">{student.uid.slice(0, 8)}</TableCell>
                   <TableCell className="font-medium">{student.name}</TableCell>
                   {Array.from({ length: TOTAL_WEEKS }, (_, i) => {
                     const week = (i + 1).toString();
                     const isPresent = student.attendance[week];
                     return (
                       <TableCell 
-                        key={`${student.id}-week-${week}`} 
+                        key={`${student.uid}-week-${week}`} 
                         className="week-col manual-toggle"
-                        onClick={() => onManualAttendanceToggle(student.id, week)}
+                        onClick={() => onManualAttendanceToggle(student.uid, week)}
                       >
                         {isPresent ? 'X' : ''}
                       </TableCell>

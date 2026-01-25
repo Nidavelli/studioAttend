@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -29,7 +30,7 @@ export function AttendanceAnalytics({ students, attendanceThreshold }: { student
   };
 
   const handleGenerateSummary = async (student: Student) => {
-    setLoadingSummary(student.id);
+    setLoadingSummary(student.uid);
     const attendanceString = Object.entries(student.attendance)
       .map(([week, present]) => `Week ${week}: ${present ? 'Present' : 'Absent'}`)
       .join(', ');
@@ -64,10 +65,10 @@ export function AttendanceAnalytics({ students, attendanceThreshold }: { student
               const { percentage, attended, total } = calculateAttendance(student);
               const isBelowThreshold = percentage < attendanceThreshold;
               const avatar = findImage(student.avatarId);
-              const isLoading = loadingSummary === student.id;
+              const isLoading = loadingSummary === student.uid;
 
               return (
-                <TableRow key={student.id}>
+                <TableRow key={student.uid}>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar>

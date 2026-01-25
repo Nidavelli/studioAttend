@@ -7,17 +7,25 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import type { Student } from '@/lib/data';
+import type { Student, Unit } from '@/lib/data';
 import type { SignedInStudent } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { AlertTriangle, Timer, QrCode, MapPin, Loader2 } from 'lucide-react';
+import { AlertTriangle, Timer, QrCode, MapPin, Loader2, PlusCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { GeolocationCoordinates } from './student-view';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { createUnit } from '@/app/actions';
+import { useUser } from '@/firebase/auth/use-user';
+
 
 const CountdownTimer = ({ endTime }: { endTime: Date }) => {
   const [timeLeft, setTimeLeft] = useState('');
@@ -67,10 +75,93 @@ const LocationMap = ({ location }: { location: GeolocationCoordinates }) => {
   );
 };
 
+const createUnitFormSchema = z.object({
+  unitName: z.string().min(3, "Unit name must be at least 3 characters."),
+  unitCode: z.string().min(3, "Unit code must be at least 3 characters.").max(10, "Unit code must be 10 characters or less."),
+  attendanceThreshold: z.coerce.number().min(0).max(100, "Threshold must be between 0 and 100."),
+});
+
+function CreateUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
+  const { user } = useUser();
+  const { toast } = useToast();
+  const form = useForm<z.infer<typeof createUnitFormSchema>>({
+    resolver: zodResolver(createUnitFormSchema),
+    defaultValues: {
+      unitName: "",
+      unitCode: "",
+      attendanceThreshold: 85,
+    },
+  });
+
+  async function onSubmit(values: z.infer<typeof createUnitFormSchema>) {
+    if (!user) {
+        toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to create a unit." });
+        return;
+    }
+    const result = await createUnit(values.unitName, values.unitCode, user.uid, values.attendanceThreshold);
+    if (result.success) {
+      toast({ title: "Unit Created", description: `The unit "${values.unitName}" has been successfully created.` });
+      setOpen(false);
+      form.reset();
+    } else {
+      toast({ variant: "destructive", title: "Creation Failed", description: result.error });
+    }
+  }
+  
+  return (
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+                control={form.control}
+                name="unitName"
+                render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Unit Name</FormLabel>
+                        <FormControl>
+                            <Input placeholder="e.g., Advanced Web Architectures" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )}
+            />
+            <FormField
+                control={form.control}
+                name="unitCode"
+                render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Unit Code</FormLabel>
+                        <FormControl>
+                            <Input placeholder="e.g., CS-452" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )}
+            />
+            <FormField
+                control={form.control}
+                name="attendanceThreshold"
+                render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Attendance Threshold (%)</FormLabel>
+                        <FormControl>
+                            <Input type="number" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )}
+            />
+            <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create Unit
+            </Button>
+        </form>
+      </Form>
+  )
+}
 
 export function LecturerDashboard({
   students,
-  courseName,
+  unit,
   signedInStudents,
   isSessionActive,
   onToggleSession,
@@ -79,14 +170,13 @@ export function LecturerDashboard({
   setSessionDuration,
   sessionEndTime,
   sessionPin,
-  attendanceThreshold,
   lecturerLocation,
   setLecturerLocation,
   radius,
   setRadius,
 }: {
   students: Student[];
-  courseName: string;
+  unit: Unit;
   signedInStudents: SignedInStudent[];
   isSessionActive: boolean;
   onToggleSession: () => void;
@@ -95,13 +185,13 @@ export function LecturerDashboard({
   setSessionDuration: (duration: number) => void;
   sessionEndTime: Date | null;
   sessionPin: string;
-  attendanceThreshold: number;
   lecturerLocation: GeolocationCoordinates | null;
   setLecturerLocation: (location: GeolocationCoordinates | null) => void;
   radius: number;
   setRadius: (radius: number) => void;
 }) {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [isCreateUnitOpen, setIsCreateUnitOpen] = useState(false);
   const { toast } = useToast();
 
   const handleSetLocation = () => {
@@ -138,6 +228,35 @@ export function LecturerDashboard({
       { enableHighAccuracy: true }
     );
   };
+  
+  if (!unit) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <Card className="max-w-lg">
+          <CardHeader>
+            <CardTitle>Welcome, Lecturer!</CardTitle>
+            <CardDescription>You haven't created any units yet. Create a unit to get started.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Dialog open={isCreateUnitOpen} onOpenChange={setIsCreateUnitOpen}>
+              <DialogTrigger asChild>
+                <Button><PlusCircle className="mr-2"/> Create Your First Unit</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create a New Unit</DialogTitle>
+                  <DialogDescription>
+                    Fill in the details below to add a new unit.
+                  </DialogDescription>
+                </DialogHeader>
+                <CreateUnitForm setOpen={setIsCreateUnitOpen} />
+              </DialogContent>
+            </Dialog>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
@@ -234,7 +353,7 @@ export function LecturerDashboard({
            {isSessionActive ? (
             <div className="flex flex-col md:flex-row items-center justify-center gap-6">
                 <div className="bg-white p-4 rounded-lg">
-                    <QRCode value={courseName} size={160} />
+                    <QRCode value={unit.name} size={160} />
                 </div>
                 <div className="flex flex-col items-center gap-2">
                     <p className="text-muted-foreground text-sm">CURRENT PIN</p>
@@ -315,7 +434,7 @@ export function LecturerDashboard({
           <CardDescription>Overall attendance records for all students.</CardDescription>
         </CardHeader>
         <CardContent>
-          <AttendanceAnalytics students={students} attendanceThreshold={attendanceThreshold} />
+          <AttendanceAnalytics students={students} attendanceThreshold={unit.attendanceThreshold} />
         </CardContent>
       </Card>
 

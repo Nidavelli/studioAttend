@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from 'react';
@@ -32,7 +33,7 @@ export function StudentAttendanceReport({ student, courseName }: { student: Stud
                 const isPresent = student.attendance[week];
                 return (
                   <TableCell 
-                    key={`${student.id}-week-${week}`} 
+                    key={`${student.uid}-week-${week}`} 
                     className="text-center"
                   >
                     {isPresent === true && <Check className="h-5 w-5 text-green-600 mx-auto" />}

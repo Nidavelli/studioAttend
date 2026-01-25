@@ -1,93 +1,30 @@
 import type { ImagePlaceholder } from './placeholder-images';
 import { PlaceHolderImages } from './placeholder-images';
 
+// The Student type now includes a `uid` from Firebase Auth.
+// The `attendance` is still managed locally for now, to be moved to Firestore in Phase 4.
 export type Student = {
-  id: string;
+  uid: string;
   name: string;
   email: string;
-  avatarId: string;
+  role: 'student' | 'lecturer';
+  avatarId: string; // This will be phased out, but kept for avatar logic
   attendance: Record<string, boolean>;
 };
 
-export type Course = {
-  id: string;
+// The Unit type aligns with the new Firestore document structure.
+// It stores student IDs instead of full student objects.
+export type Unit = {
+  id: string; // Firestore document ID
   name: string;
   code: string;
+  lecturerId: string;
   attendanceThreshold: number;
-  students: Student[];
+  enrolledStudents: string[]; // Array of student UIDs
 };
-
-export const courses: Course[] = [
-  {
-    id: 'c1',
-    name: 'Advanced Web Architectures',
-    code: 'CS-452',
-    attendanceThreshold: 85,
-    students: [
-      {
-        id: 's1',
-        name: 'Liam Johnson',
-        email: 'liam.j@example.com',
-        avatarId: 'student-1',
-        attendance: { '1': true, '2': true, '3': true, '4': false, '5': true, '6': true, '7': true, '8': true, '9': true, '10': true },
-      },
-      {
-        id: 's2',
-        name: 'Olivia Smith',
-        email: 'olivia.s@example.com',
-        avatarId: 'student-2',
-        attendance: { '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true, '10': true },
-      },
-      {
-        id: 's3',
-        name: 'Noah Williams',
-        email: 'noah.w@example.com',
-        avatarId: 'student-3',
-        attendance: { '1': true, '2': false, '3': false, '4': true, '5': false, '6': true, '7': true, '8': false, '9': true, '10': true },
-      },
-      {
-        id: 's4',
-        name: 'Emma Brown',
-        email: 'emma.b@example.com',
-        avatarId: 'student-4',
-        attendance: { '1': true, '2': true, '3': true, '4': true, '5': true, '6': false, '7': true, '8': true, '9': false, '10': true },
-      },
-      {
-        id: 's5',
-        name: 'Ava Jones',
-        email: 'ava.j@example.com',
-        avatarId: 'student-5',
-        attendance: { '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true, '10': false },
-      },
-    ],
-  },
-  {
-    id: 'c2',
-    name: 'Introduction to AI',
-    code: 'CS-361',
-    attendanceThreshold: 90,
-    students: [
-      {
-        id: 's6',
-        name: 'James Wilson',
-        email: 'james.w@example.com',
-        avatarId: 'student-1',
-        attendance: { '1': true, '2': true, '3': true, '4': true, '5': true },
-      },
-      {
-        id: 's7',
-        name: 'Isabella Garcia',
-        email: 'isabella.g@example.com',
-        avatarId: 'student-2',
-        attendance: { '1': true, '2': false, '3': true, '4': true, '5': true },
-      },
-    ],
-  },
-];
 
 
 export function findImage(avatarId: string): ImagePlaceholder | undefined {
+  // This function remains to support existing avatar logic.
   return PlaceHolderImages.find(img => img.id === avatarId);
 }
-
-    
