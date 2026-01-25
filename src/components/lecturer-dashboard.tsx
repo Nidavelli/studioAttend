@@ -214,6 +214,11 @@ export function LecturerDashboard({
                   End Session
                </Button>
                {sessionEndTime && <CountdownTimer endTime={sessionEndTime} />}
+               {lecturerLocation && (
+                 <div className="w-full pt-4 mt-4 border-t">
+                   <LocationMap location={lecturerLocation} />
+                 </div>
+               )}
              </>
           )}
 
