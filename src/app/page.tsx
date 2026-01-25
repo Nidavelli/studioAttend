@@ -6,12 +6,13 @@ import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase/auth/use-user';
 import { Header } from '@/components/header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { StudentView } from '@/components/student-view';
+import { StudentView, type GeolocationCoordinates } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Student, Course } from '@/lib/data';
 import { courses as initialCourses } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
+import { haversineDistance } from '@/lib/utils';
 
 export type SignedInStudent = {
   id: string;
@@ -32,12 +33,20 @@ export default function Home() {
     return courses.find(c => c.id === selectedCourseId)!;
   }, [courses, selectedCourseId]);
 
+  // Session state
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionPin, setSessionPin] = useState<string>('');
-  const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
-  const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
   const [sessionDuration, setSessionDuration] = useState<number>(15);
   const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
+  
+  // Location state
+  const [lecturerLocation, setLecturerLocation] = useState<GeolocationCoordinates | null>(null);
+  const [radius, setRadius] = useState<number>(50); // Default radius in meters
+
+  // Live ledger state
+  const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
+  const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
+  
   const { toast } = useToast();
 
   useEffect(() => {
@@ -83,6 +92,7 @@ export default function Home() {
     setUsedDeviceIds(new Set());
     setSessionEndTime(null);
     setSessionPin('');
+    setLecturerLocation(null);
   };
 
   const handleCourseChange = (courseId: string) => {
@@ -97,33 +107,8 @@ export default function Home() {
     setSelectedCourseId(courseId);
   };
 
-  const handleSignIn = (studentId: string, deviceId: string, pin: string): Student | null => {
-    if (sessionEndTime && new Date() > sessionEndTime) {
-        toast({
-            variant: "destructive",
-            title: "Session Expired",
-            description: "The attendance session has ended.",
-        });
-        setSessionActive(false);
-        return null;
-    }
-
-    if (pin !== sessionPin) {
-      toast({
-        variant: 'destructive',
-        title: 'Incorrect PIN',
-        description: 'The PIN you entered is incorrect or has expired. Please try again.',
-      });
-      return null;
-    }
-
-    const course = courses.find(c => c.id === selectedCourseId);
-    if (!course) return null;
-    
-    const student = course.students.find((s) => s.id === studentId);
-    if (!student) return null;
-
-    if (signedInStudents.some((s) => s.id === studentId)) {
+  const recordSuccessfulSignIn = (studentId: string, deviceId: string): Student | null => {
+     if (signedInStudents.some((s) => s.id === studentId)) {
         toast({
             variant: "destructive",
             title: "Already Signed In",
@@ -136,6 +121,11 @@ export default function Home() {
         }
         return currentStudent || null;
     }
+
+    const course = courses.find(c => c.id === selectedCourseId);
+    if (!course) return null;
+    const student = course.students.find((s) => s.id === studentId);
+    if (!student) return null;
 
     const isDuplicate = usedDeviceIds.has(deviceId);
 
@@ -177,6 +167,58 @@ export default function Home() {
     });
 
     return finalUpdatedStudent;
+  }
+
+  const handleQrSignIn = (studentId: string, deviceId: string, pin: string): Student | null => {
+    if (sessionEndTime && new Date() > sessionEndTime) {
+      toast({
+        variant: "destructive",
+        title: "Session Expired",
+        description: "The attendance session has ended.",
+      });
+      setSessionActive(false);
+      return null;
+    }
+
+    if (pin !== sessionPin) {
+      toast({
+        variant: 'destructive',
+        title: 'Incorrect PIN',
+        description: 'The PIN you entered is incorrect or has expired. Please try again.',
+      });
+      return null;
+    }
+    
+    return recordSuccessfulSignIn(studentId, deviceId);
+  };
+  
+  const handleLocationSignIn = (studentId: string, studentLocation: GeolocationCoordinates, deviceId: string): { student: Student | null; distance?: number } => {
+    if (sessionEndTime && new Date() > sessionEndTime) {
+      toast({
+        variant: "destructive",
+        title: "Session Expired",
+        description: "The attendance session has ended.",
+      });
+      setSessionActive(false);
+      return { student: null };
+    }
+    
+    if (!lecturerLocation) {
+        toast({
+            variant: "destructive",
+            title: "Location Not Set",
+            description: "The lecturer has not set a location for this session.",
+        });
+        return { student: null };
+    }
+
+    const distance = haversineDistance(studentLocation, lecturerLocation);
+    if (distance > radius) {
+        return { student: null, distance: Math.round(distance) };
+    }
+    
+    const student = recordSuccessfulSignIn(studentId, deviceId);
+    return { student };
   };
 
 
@@ -201,6 +243,14 @@ export default function Home() {
     if (sessionActive) {
       endSession();
     } else {
+       if (!lecturerLocation) {
+        toast({
+          variant: "destructive",
+          title: "Cannot Start Session",
+          description: "Please set the session location before starting.",
+        });
+        return;
+      }
       const endTime = new Date(new Date().getTime() + sessionDuration * 60000);
       setSessionEndTime(endTime);
       setSessionActive(true);
@@ -251,7 +301,8 @@ export default function Home() {
             <TabsContent value="student">
               <StudentView
                 students={selectedCourse.students}
-                onSignIn={handleSignIn}
+                onLocationSignIn={handleLocationSignIn}
+                onQrSignIn={handleQrSignIn}
                 isSessionActive={sessionActive}
                 sessionEndTime={sessionEndTime}
                 courseName={selectedCourse.name}
@@ -272,6 +323,10 @@ export default function Home() {
                 sessionEndTime={sessionEndTime}
                 sessionPin={sessionPin}
                 attendanceThreshold={selectedCourse.attendanceThreshold}
+                lecturerLocation={lecturerLocation}
+                setLecturerLocation={setLecturerLocation}
+                radius={radius}
+                setRadius={setRadius}
               />
             </TabsContent>
           </Tabs>

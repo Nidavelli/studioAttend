@@ -7,16 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Separator } from '@/components/ui/separator';
 import type { Student } from '@/lib/data';
 import type { SignedInStudent } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { AlertTriangle, Timer, QrCode } from 'lucide-react';
+import { AlertTriangle, Timer, QrCode, MapPin, Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import type { GeolocationCoordinates } from './student-view';
+import { useToast } from '@/hooks/use-toast';
 
 const CountdownTimer = ({ endTime }: { endTime: Date }) => {
   const [timeLeft, setTimeLeft] = useState('');
@@ -60,6 +61,10 @@ export function LecturerDashboard({
   sessionEndTime,
   sessionPin,
   attendanceThreshold,
+  lecturerLocation,
+  setLecturerLocation,
+  radius,
+  setRadius,
 }: {
   students: Student[];
   courseName: string;
@@ -72,29 +77,103 @@ export function LecturerDashboard({
   sessionEndTime: Date | null;
   sessionPin: string;
   attendanceThreshold: number;
+  lecturerLocation: GeolocationCoordinates | null;
+  setLecturerLocation: (location: GeolocationCoordinates | null) => void;
+  radius: number;
+  setRadius: (radius: number) => void;
 }) {
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const { toast } = useToast();
+
+  const handleSetLocation = () => {
+    setIsGettingLocation(true);
+    if (!navigator.geolocation) {
+      toast({
+        variant: "destructive",
+        title: "Geolocation Not Supported",
+        description: "Your browser does not support geolocation.",
+      });
+      setIsGettingLocation(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLecturerLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        toast({
+            title: "Location Set",
+            description: "Your current location has been set for the session.",
+        });
+        setIsGettingLocation(false);
+      },
+      () => {
+        toast({
+            variant: "destructive",
+            title: "Geolocation Failed",
+            description: "Could not get your location. Please check browser permissions.",
+        });
+        setIsGettingLocation(false);
+      },
+      { enableHighAccuracy: true }
+    );
+  };
 
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
       <Card className="lg:col-span-1">
         <CardHeader>
           <CardTitle className="font-headline">Session Control</CardTitle>
-          <CardDescription>Start or end the attendance session.</CardDescription>
+          <CardDescription>Manage the attendance session.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
           {!isSessionActive ? (
             <>
-              <div className="w-full space-y-2">
-                <Label htmlFor="duration">Duration (min)</Label>
-                <Input 
-                  id="duration" 
-                  type="number"
-                  value={sessionDuration}
-                  onChange={(e) => setSessionDuration(Number(e.target.value))}
-                  placeholder="e.g. 15"
-                  disabled={isSessionActive}
-                />
+              <div className="w-full space-y-4">
+                <div className="space-y-2">
+                    <Label htmlFor="location">Session Location</Label>
+                    <div className="flex gap-2">
+                        <Input 
+                            id="location"
+                            type="text"
+                            value={lecturerLocation ? `Lat: ${lecturerLocation.lat.toFixed(4)}, Lng: ${lecturerLocation.lng.toFixed(4)}` : 'Not set'}
+                            readOnly
+                            disabled={isSessionActive}
+                        />
+                        <Button 
+                            variant="outline" 
+                            size="icon" 
+                            onClick={handleSetLocation} 
+                            disabled={isGettingLocation || isSessionActive}
+                        >
+                            {isGettingLocation ? <Loader2 className="animate-spin" /> : <MapPin />}
+                        </Button>
+                    </div>
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="radius">Radius (meters)</Label>
+                    <Input 
+                        id="radius"
+                        type="number"
+                        value={radius}
+                        onChange={(e) => setRadius(Number(e.target.value))}
+                        disabled={isSessionActive}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="duration">Duration (min)</Label>
+                    <Input 
+                        id="duration" 
+                        type="number"
+                        value={sessionDuration}
+                        onChange={(e) => setSessionDuration(Number(e.target.value))}
+                        placeholder="e.g. 15"
+                        disabled={isSessionActive}
+                    />
+                </div>
               </div>
+
               <div className="flex items-center gap-2 pt-2">
                 <span className={`h-3 w-3 rounded-full bg-red-500`}></span>
                 <span className="font-medium">Session Inactive</span>
