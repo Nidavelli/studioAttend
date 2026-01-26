@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Loader2, Fingerprint, CheckCircle, XCircle, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles, BookOpen } from 'lucide-react';
 import type { Student, UnitWithAttendance, AttendanceRecord } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
