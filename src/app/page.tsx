@@ -104,6 +104,29 @@ export default function Home() {
     setLecturerLocation(null);
   }, [selectedUnitId, firestore]);
 
+  // Session timer and PIN generation logic
+  useEffect(() => {
+    let timerInterval: NodeJS.Timeout;
+    let pinInterval: NodeJS.Timeout;
+
+    if (sessionActive && sessionEndTime) {
+      timerInterval = setInterval(() => {
+        if (new Date() > sessionEndTime) {
+          endSession();
+          toast({ title: "Session Ended", description: "The attendance session has automatically ended." });
+        }
+      }, 1000);
+      
+      const generateNewPin = () => setSessionPin(Math.floor(1000 + Math.random() * 9000).toString());
+      generateNewPin();
+      pinInterval = setInterval(generateNewPin, 15000);
+    }
+    return () => {
+      clearInterval(timerInterval);
+      clearInterval(pinInterval);
+    };
+  }, [sessionActive, sessionEndTime, toast, endSession]);
+
   // Effect to fetch user role
   useEffect(() => {
     if (userLoading) return;
@@ -160,6 +183,15 @@ export default function Home() {
                 setSelectedUnitId(null);
             }
         } else { // student
+            const activeUnit = fetchedUnits.find(u => u.activeSessionId);
+            if (activeUnit) {
+              setSelectedUnitId(activeUnit.id);
+              setActiveSessionId(activeUnit.activeSessionId);
+            } else {
+              setSelectedUnitId(null);
+              setActiveSessionId(null);
+            }
+
             const fetchStudentAttendance = async () => {
                 const unitsWithAttendance: UnitWithAttendance[] = await Promise.all(
                     fetchedUnits.map(async (unit) => {
@@ -189,7 +221,7 @@ export default function Home() {
     });
 
     return () => unsubscribe();
-  }, [role, user, firestore, toast, selectedUnitId, auth]);
+  }, [role, user, firestore, toast, auth]);
 
   // Effect for lecturers to fetch students and attendance records for the selected unit
   useEffect(() => {
@@ -247,29 +279,6 @@ export default function Home() {
         }
     }, [selectedUnit, role, firestore]);
     
-  // Session timer and PIN generation logic
-  useEffect(() => {
-    let timerInterval: NodeJS.Timeout;
-    let pinInterval: NodeJS.Timeout;
-
-    if (sessionActive && sessionEndTime) {
-      timerInterval = setInterval(() => {
-        if (new Date() > sessionEndTime) {
-          endSession();
-          toast({ title: "Session Ended", description: "The attendance session has automatically ended." });
-        }
-      }, 1000);
-      
-      const generateNewPin = () => setSessionPin(Math.floor(1000 + Math.random() * 9000).toString());
-      generateNewPin();
-      pinInterval = setInterval(generateNewPin, 15000);
-    }
-    return () => {
-      clearInterval(timerInterval);
-      clearInterval(pinInterval);
-    };
-  }, [sessionActive, sessionEndTime, toast, endSession]);
-
   const handleUnitChange = (unitId: string) => {
     if (sessionActive) {
       toast({ variant: "destructive", title: "Cannot Change Unit", description: "Please end the active session before changing the unit." });
@@ -510,3 +519,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
