@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Loader2, Fingerprint, CheckCircle, XCircle, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles, BookOpen } from 'lucide-react';
-import type { Student, UnitWithAttendance, AttendanceRecord } from '@/lib/data';
+import type { UnitWithAttendance, AttendanceRecord } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import { generateSimpleId } from '@/lib/utils';
 import { Html5Qrcode, type Html5QrcodeResult } from 'html5-qrcode';
@@ -28,7 +28,7 @@ import { useFirestore } from '@/firebase/provider';
 import { Skeleton } from './ui/skeleton';
 
 
-type SignInStep = 'idle' | 'methodChoice' | 'locating' | 'scanning' | 'pinEntry' | 'biometric' | 'recording' | 'success' | 'error' | 'locationError';
+type SignInStep = 'idle' | 'methodChoice' | 'locating' | 'scanning' | 'pinEntry' | 'recording' | 'success' | 'error' | 'locationError';
 type SignInError = {
   title: string;
   description: string;
@@ -262,7 +262,7 @@ export function StudentView({
     setPin('');
     setSignInError(null);
     setQrData(null);
-    setSigningInUnitId(null);
+    if(signingInUnitId) setSigningInUnitId(null);
     setShowConfetti(false);
   };
   
@@ -328,51 +328,13 @@ export function StudentView({
     );
   };
 
-  const handleBiometricAuth = async (onSuccess: () => void) => {
-    if (!user) return;
-    setSignInStep('biometric');
-    try {
-        const isSupported = await (window.PublicKeyCredential as any)?.isUserVerifyingPlatformAuthenticatorAvailable?.();
-        if (!isSupported) {
-            toast({ title: "Biometrics Not Required", description: "This device doesn't support biometrics. Continuing sign-in." });
-            onSuccess();
-            return;
-        }
-
-        const challenge = new Uint8Array(32);
-        window.crypto.getRandomValues(challenge);
-
-        const credential = await navigator.credentials.create({
-            publicKey: {
-                challenge,
-                rp: { id: window.location.hostname, name: "AttendSync" },
-                user: { id: new TextEncoder().encode(user.uid), name: user.email!, displayName: user.displayName! },
-                pubKeyCredParams: [{ type: "public-key", alg: -7 }], // ES256
-                authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
-                timeout: 60000,
-            }
-        });
-
-        if (credential) onSuccess();
-        else throw new Error("Biometric authentication failed or was canceled.");
-
-    } catch (error: any) {
-        toast({
-            variant: "destructive",
-            title: "Biometric Failed",
-            description: error.name === 'NotAllowedError' ? 'Authentication was canceled.' : 'Could not verify your identity.',
-        });
-        setSignInStep('methodChoice');
-    }
-  };
-
   const handleSubmitPin = (e: React.FormEvent) => {
     e.preventDefault();
     if (pin.length !== 4) {
       toast({ variant: 'destructive', title: 'Invalid PIN', description: 'Please enter a 4-digit PIN.' });
       return;
     }
-    handleBiometricAuth(recordQrAttendance);
+    recordQrAttendance();
   };
 
   if (units.length === 0) {
@@ -439,13 +401,11 @@ export function StudentView({
             <div className="flex gap-2 w-full"><Button type="button" variant="outline" onClick={() => setSignInStep('scanning')} className="w-full">Back</Button><Button type="submit" className="w-full">Submit</Button></div>
           </form>
         );
-      case 'biometric':
       case 'recording':
       case 'success':
       case 'error':
         return (
           <div className="flex flex-col items-center gap-4 w-full text-center p-8">
-            {signInStep === 'biometric' && <><Fingerprint className="h-10 w-10 animate-pulse" /><p>Verify with biometrics...</p></>}
             {signInStep === 'recording' && <><Loader2 className="h-10 w-10 animate-spin" /><p>Recording attendance...</p></>}
             {signInStep === 'success' && <><CheckCircle className="h-10 w-10 text-green-500" /><p>Sign-in Successful!</p><p className="text-sm text-muted-foreground">Your attendance has been recorded.</p></>}
             {signInStep === 'error' && <><XCircle className="h-10 w-10 text-destructive" /><p>{signInError?.title}</p><p className="text-sm text-muted-foreground">{signInError?.description}</p></>}
