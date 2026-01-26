@@ -17,12 +17,24 @@ service cloud.firestore {
       allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer'
                     && request.resource.data.lecturerId == request.auth.uid;
 
-      // Lecturers can update units they own.
-      // Students can update a unit ONLY to add themselves to the enrolledStudents list.
-      allow update: if (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' && resource.data.lecturerId == request.auth.uid)
-                    || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student'
-                        && request.resource.data.enrolledStudents.size() == resource.data.enrolledStudents.size() + 1
-                        && request.auth.uid in request.resource.data.enrolledStudents);
+      // Lecturers can update their own units.
+      // Students can ONLY update a unit to add themselves to the enrolledStudents list.
+      allow update: if 
+        (
+          // Condition for Lecturers: Allow full update if they own the unit.
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' && 
+          resource.data.lecturerId == request.auth.uid
+        ) || (
+          // Condition for Students: Allow update only for self-enrollment.
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student' &&
+          // Ensure no other fields are being modified by the student.
+          request.resource.data.name == resource.data.name &&
+          request.resource.data.code == resource.data.code &&
+          request.resource.data.lecturerId == resource.data.lecturerId &&
+          request.resource.data.attendanceThreshold == resource.data.attendanceThreshold &&
+          // This ensures that the only change to the enrolledStudents list is the addition of the requesting user's UID.
+          request.resource.data.enrolledStudents.toSet().difference(resource.data.enrolledStudents.toSet()).hasOnly([request.auth.uid])
+        );
     }
   }
 }
