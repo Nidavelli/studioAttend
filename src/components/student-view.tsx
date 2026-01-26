@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, CheckCircle, XCircle, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles, BookOpen } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles, BookOpen } from 'lucide-react';
 import type { UnitWithAttendance, AttendanceRecord } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import { generateSimpleId } from '@/lib/utils';
