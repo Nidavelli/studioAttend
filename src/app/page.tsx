@@ -150,15 +150,17 @@ export default function Home() {
           setRole(null);
         }
       } catch (error) {
-        console.error("Error fetching user role:", error);
-        setRole(null);
+        if (auth.currentUser) {
+          console.error("Error fetching user role:", error);
+          setRole(null);
+        }
       } finally {
         setIsRoleLoading(false);
       }
     };
 
     fetchRole();
-  }, [user, userLoading, router, firestore, toast]);
+  }, [user, userLoading, router, firestore, toast, auth]);
 
   // Effect for lecturers to fetch units
   useEffect(() => {
@@ -200,7 +202,13 @@ export default function Home() {
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
           const fetchedUnits: Unit[] = [];
           querySnapshot.forEach((doc) => {
-              fetchedUnits.push({ id: doc.id, ...doc.data() } as Unit);
+              const unitData = { id: doc.id, ...doc.data() } as Unit;
+              fetchedUnits.push(unitData);
+              // Real-time update for active session
+              if (unitData.activeSessionId) {
+                setSelectedUnitId(unitData.id);
+                setActiveSessionId(unitData.activeSessionId);
+              }
           });
   
           const fetchStudentAttendance = async () => {
@@ -402,17 +410,20 @@ export default function Home() {
       return { student: null };
     }
 
-    const activeLecturerUnit = units.find(u => u.id === unitId);
-    const locationForCheck = lecturerLocation || (activeLecturerUnit as any)?.lecturerLocation;
+    const locationForCheck = unit.lecturerLocation;
 
     if (!locationForCheck) {
-        toast({ variant: "destructive", title: "Location Not Set", description: "The lecturer has not set a location." });
+        toast({ variant: "destructive", title: "Location Not Set", description: "The lecturer has not set a location for this session." });
         return { student: null };
     }
+    
     const distance = haversineDistance(studentLocation, locationForCheck);
-    if (distance > radius) {
+    const sessionRadius = unit.sessionRadius || 50; // Use persisted radius or default
+
+    if (distance > sessionRadius) {
         return { student: null, distance: Math.round(distance) };
     }
+
     recordSuccessfulSignIn(unitId, studentId, 'location', deviceId);
     return { student: null };
   };
@@ -465,7 +476,8 @@ export default function Home() {
       await updateDoc(unitRef, {
           activeSessionId: newSessionId,
           sessionEndTime: Timestamp.fromDate(endTime),
-          lecturerLocation: lecturerLocation // Persist location for students
+          lecturerLocation: lecturerLocation, // Persist location for students
+          sessionRadius: radius, // Persist radius for students
       });
 
       setActiveSessionId(newSessionId);

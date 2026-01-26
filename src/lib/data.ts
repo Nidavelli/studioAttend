@@ -1,3 +1,4 @@
+
 import type { ImagePlaceholder } from './placeholder-images';
 import { PlaceHolderImages } from './placeholder-images';
 
@@ -23,6 +24,8 @@ export type Unit = {
   sessionHistory: string[]; // Array of session IDs
   activeSessionId?: string | null;
   sessionEndTime?: any | null; // Firestore Timestamp
+  lecturerLocation?: { lat: number, lng: number };
+  sessionRadius?: number;
 };
 
 // Represents a single, immutable attendance record for a student in a session.
