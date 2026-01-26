@@ -401,7 +401,7 @@ export default function Home() {
             <StudentView
               units={studentUnits}
               onLocationSignIn={handleLocationSignIn}
-              onQrSignIn={onQrSignIn}
+              onQrSignIn={handleQrSignIn}
               activeSessionUnitId={selectedUnitId}
               activeSessionId={activeSessionId}
             />
