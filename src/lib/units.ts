@@ -1,5 +1,5 @@
 
-import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, updateDoc, arrayUnion } from "firebase/firestore";
+import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction } from "firebase/firestore";
 import { firebaseApp } from "@/firebase/config";
 
 const db = getFirestore(firebaseApp);
@@ -50,15 +50,24 @@ export async function joinUnit(
       return { success: false, error: "Unit with this code not found." };
     }
 
-    const unitDoc = querySnapshot.docs[0];
-    const unitData = unitDoc.data();
+    const unitDocRef = querySnapshot.docs[0].ref;
 
-    if (unitData.enrolledStudents.includes(studentId)) {
-        return { success: false, error: "You are already enrolled in this unit." };
-    }
+    await runTransaction(db, async (transaction) => {
+      const unitDoc = await transaction.get(unitDocRef);
+      if (!unitDoc.exists()) {
+        throw new Error("Unit document not found.");
+      }
 
-    await updateDoc(doc(db, "units", unitDoc.id), {
-      enrolledStudents: arrayUnion(studentId),
+      const unitData = unitDoc.data();
+      const currentEnrolledStudents = unitData.enrolledStudents || [];
+      
+      if (currentEnrolledStudents.includes(studentId)) {
+        // To provide feedback to the user, we throw an error that will be caught.
+        throw new Error("You are already enrolled in this unit.");
+      }
+      
+      const newEnrolledStudents = [...currentEnrolledStudents, studentId];
+      transaction.update(unitDocRef, { enrolledStudents: newEnrolledStudents });
     });
 
     return { success: true };
