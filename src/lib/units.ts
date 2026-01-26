@@ -1,5 +1,5 @@
 
-import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction } from "firebase/firestore";
+import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction, updateDoc, arrayUnion } from "firebase/firestore";
 import { firebaseApp } from "@/firebase/config";
 
 const db = getFirestore(firebaseApp);
@@ -26,6 +26,7 @@ export async function createUnit(
       lecturerId: lecturerId,
       attendanceThreshold: attendanceThreshold,
       enrolledStudents: [],
+      sessionHistory: [],
       createdAt: serverTimestamp(),
     });
 
@@ -62,7 +63,6 @@ export async function joinUnit(
       const currentEnrolledStudents = unitData.enrolledStudents || [];
       
       if (currentEnrolledStudents.includes(studentId)) {
-        // To provide feedback to the user, we throw an error that will be caught.
         throw new Error("You are already enrolled in this unit.");
       }
       
@@ -76,4 +76,11 @@ export async function joinUnit(
     console.error("Error joining unit:", error);
     return { success: false, error: error.message || "Failed to join unit." };
   }
+}
+
+export async function addSessionToUnitHistory(unitId: string, sessionId: string) {
+    const unitRef = doc(db, "units", unitId);
+    await updateDoc(unitRef, {
+        sessionHistory: arrayUnion(sessionId)
+    });
 }

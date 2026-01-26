@@ -2,24 +2,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, CheckCircle, XCircle, Timer, AlertTriangle, QrCode, ScanLine, Pin, MapPin, PlusCircle } from 'lucide-react';
-import type { Student, Unit } from '@/lib/data';
-import { findImage } from '@/lib/data';
+import { Loader2, Fingerprint, CheckCircle, XCircle, Timer, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles } from 'lucide-react';
+import type { Student, Unit, UnitWithAttendance } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
-import { StudentAttendanceReport } from './student-attendance-report';
 import { generateSimpleId } from '@/lib/utils';
 import { Html5Qrcode, type Html5QrcodeResult } from 'html5-qrcode';
 import { useForm } from 'react-hook-form';
@@ -28,7 +18,7 @@ import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { joinUnit } from '@/lib/units';
 import { useUser } from '@/firebase/auth/use-user';
-
+import { Progress } from '@/components/ui/progress';
 
 export type GeolocationCoordinates = {
   lat: number;
@@ -40,37 +30,6 @@ type SignInError = {
   title: string;
   description: string;
 } | null;
-
-const CountdownTimer = ({ endTime }: { endTime: Date }) => {
-  const [timeLeft, setTimeLeft] = React.useState('');
-
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      const now = new Date();
-      const difference = endTime.getTime() - now.getTime();
-
-      if (difference > 0) {
-        const minutes = Math.floor((difference / 1000 / 60) % 60);
-        const seconds = Math.floor((difference / 1000) % 60);
-        setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-      } else {
-        setTimeLeft('00:00');
-        clearInterval(timer);
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [endTime]);
-
-  if (!timeLeft || timeLeft === '00:00') return null;
-
-  return (
-    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground font-medium">
-      <Timer className="h-4 w-4" />
-      <span>Session ends in: <span className="font-mono font-bold">{timeLeft}</span></span>
-    </div>
-  );
-};
 
 const joinUnitFormSchema = z.object({
   unitCode: z.string().min(3, "Unit code must be at least 3 characters."),
@@ -124,93 +83,144 @@ function JoinUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
   )
 }
 
+function UnitCard({ 
+  unit, 
+  onSignIn, 
+  activeSessionId 
+}: { 
+  unit: UnitWithAttendance, 
+  onSignIn: (unitId: string) => void,
+  activeSessionId: string | null,
+}) {
+  const totalSessions = unit.sessionHistory?.length || 0;
+  const percentage = totalSessions > 0 ? Math.round((unit.attendedSessionsCount / totalSessions) * 100) : 0;
+  const isAtRisk = percentage < unit.attendanceThreshold;
+  const isSessionActiveForThisUnit = activeSessionId ? unit.sessionHistory?.includes(activeSessionId) : false;
+
+  return (
+    <Card className="flex flex-col">
+      <CardHeader>
+        <CardTitle>{unit.name}</CardTitle>
+        <CardDescription>{unit.code}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex-grow space-y-4">
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-sm font-medium">Attendance</span>
+            <span className={`text-sm font-bold ${isAtRisk ? 'text-destructive' : 'text-foreground'}`}>{percentage}%</span>
+          </div>
+          <Progress value={percentage} className={isAtRisk ? '[&>div]:bg-destructive' : ''} />
+          <p className="text-xs text-muted-foreground mt-1">
+            Attended {unit.attendedSessionsCount} of {totalSessions} sessions.
+          </p>
+        </div>
+      </CardContent>
+      <CardFooter>
+        <Button 
+          className={`w-full ${isSessionActiveForThisUnit ? 'animate-pulse' : ''}`}
+          disabled={!isSessionActiveForThisUnit}
+          onClick={() => onSignIn(unit.id)}
+        >
+          {isSessionActiveForThisUnit ? <Sparkles className="mr-2 h-4 w-4" /> : null}
+          {isSessionActiveForThisUnit ? "Sign In Now" : "Session Inactive"}
+        </Button>
+      </CardFooter>
+    </Card>
+  )
+}
+
 
 export function StudentView({
-  students,
-  unit,
+  units,
   onLocationSignIn,
   onQrSignIn,
-  isSessionActive,
-  sessionEndTime,
-  studentForReport,
-  onCloseReport,
+  activeSessionUnitId,
+  activeSessionId,
 }: {
-  students: Student[];
-  unit: Unit;
+  units: UnitWithAttendance[];
   onLocationSignIn: (studentId: string, location: GeolocationCoordinates, deviceId: string) => { student: Student | null, distance?: number };
-  onQrSignIn: (studentId: string, deviceId: string, pin: string) => Student | null;
-  isSessionActive: boolean;
-  sessionEndTime: Date | null;
-  studentForReport: Student | null;
-  onCloseReport: () => void;
+  onQrSignIn: (studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Student | null;
+  activeSessionUnitId: string | null;
+  activeSessionId: string | null;
 }) {
   const { user } = useUser();
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
   const [signInError, setSignInError] = useState<SignInError>(null);
   const [pin, setPin] = useState('');
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [qrData, setQrData] = useState<{unitId: string, sessionId: string} | null>(null);
   const { toast } = useToast();
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const qrReaderId = "qr-reader";
   const [isJoinUnitOpen, setIsJoinUnitOpen] = useState(false);
+  const [isSignInDialogOpen, setIsSignInDialogOpen] = useState(false);
 
   useEffect(() => {
     setDeviceId(generateSimpleId());
-    // Set the current user as the selected student automatically
-    if (user) {
-      setSelectedStudentId(user.uid);
-      setSignInStep('methodChoice');
-    }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
-    if (signInStep === 'scanning' && selectedStudentId) {
+    if (signInStep === 'scanning' && isSignInDialogOpen) {
       if (!html5QrCodeRef.current) {
         html5QrCodeRef.current = new Html5Qrcode(qrReaderId);
       }
       const qrCode = html5QrCodeRef.current;
       
+      const onScanSuccess = (decodedText: string, result: Html5QrcodeResult) => {
+        if (qrCode.isScanning) {
+          qrCode.stop().then(() => {
+            try {
+              const data = JSON.parse(decodedText);
+              if (data.unitId && data.sessionId) {
+                setQrData(data);
+                setSignInStep('pinEntry');
+                toast({ title: "QR Code Scanned" });
+              } else {
+                throw new Error("Invalid QR code data");
+              }
+            } catch (e) {
+                toast({ variant: 'destructive', title: 'Invalid QR Code', description: 'This QR code is not for AttendSync.' });
+                resetSignInFlow();
+            }
+          }).catch(err => console.error("Failed to stop scanner", err));
+        }
+      };
+
       qrCode.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText: string, result: Html5QrcodeResult) => {
-          if (qrCode.isScanning) {
-            qrCode.stop().then(() => {
-              setSignInStep('pinEntry');
-              toast({ title: "QR Code Scanned", description: `Scanned: ${decodedText}` });
-            }).catch(err => console.error("Failed to stop scanner", err));
-          }
-        },
+        onScanSuccess,
         (errorMessage: string) => {}
       ).catch(err => {
         toast({ variant: 'destructive', title: 'Camera Error', description: 'Could not start QR scanner. Please grant camera permissions.' });
-        setSignInStep('methodChoice');
+        resetSignInFlow();
       });
     }
 
     return () => {
       if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
-        html5QrCodeRef.current.stop().catch(err => console.error("Failed to stop scanner on cleanup", err));
+        html5QrCodeRef.current.stop().catch(err => {});
       }
     };
-  }, [signInStep, selectedStudentId, toast]);
-  
-  const selectedStudent = React.useMemo(
-    () => students.find((s) => s.uid === selectedStudentId),
-    [selectedStudentId, students]
-  );
+  }, [signInStep, isSignInDialogOpen, toast]);
   
   const resetSignInFlow = () => {
-    setSignInStep(selectedStudentId ? 'methodChoice' : 'idle');
+    setSignInStep('methodChoice');
     setPin('');
     setSignInError(null);
+    setQrData(null);
   };
+  
+  const startSignIn = () => {
+    setIsSignInDialogOpen(true);
+    setSignInStep('methodChoice');
+  }
 
   const recordQrAttendance = () => {
+    if (!user || !qrData) return;
     setSignInStep('recording');
     setTimeout(() => {
-      const updatedStudent = onQrSignIn(selectedStudent!.uid, deviceId!, pin);
+      const updatedStudent = onQrSignIn(user.uid, deviceId!, pin, qrData.sessionId);
       if (updatedStudent) {
         setSignInStep('success');
       } else {
@@ -222,6 +232,7 @@ export function StudentView({
   };
   
   const handleLocationAuth = () => {
+    if (!user || !activeSessionUnitId) return;
     setSignInStep('locating');
     if (!navigator.geolocation) {
       setSignInError({ title: "Location Not Supported", description: "Your browser does not support geolocation. Please use the QR code method." });
@@ -238,14 +249,15 @@ export function StudentView({
         setSignInStep('recording');
         
         setTimeout(() => {
-          const { student: updatedStudent, distance } = onLocationSignIn(selectedStudent!.uid, studentLocation, deviceId!);
+          const { student: updatedStudent, distance } = onLocationSignIn(user.uid, studentLocation, deviceId!);
           if (updatedStudent) {
             setSignInStep('success');
+
           } else {
             if (distance) {
-               setSignInError({ title: "Too Far Away", description: `You are approximately ${distance} meters from the classroom. Please move closer or ask your lecturer for a manual sign-in.` });
+               setSignInError({ title: "Too Far Away", description: `You are approximately ${distance} meters from the classroom. Please move closer.` });
             } else {
-               setSignInError({ title: "Sign-in Failed", description: `Could not verify your location. Please ask your lecturer for help.` });
+               setSignInError({ title: "Sign-in Failed", description: `Could not verify your location. Please try again.` });
             }
             setSignInStep('locationError');
           }
@@ -261,14 +273,12 @@ export function StudentView({
   };
 
   const handleBiometricAuth = async (onSuccess: () => void) => {
+    if (!user) return;
     setSignInStep('biometric');
     try {
         const isSupported = await (window.PublicKeyCredential as any)?.isUserVerifyingPlatformAuthenticatorAvailable?.();
         if (!isSupported) {
-            toast({
-                title: "Biometrics Not Required",
-                description: "This device doesn't support biometrics. Continuing sign-in.",
-            });
+            toast({ title: "Biometrics Not Required", description: "This device doesn't support biometrics. Continuing sign-in." });
             onSuccess();
             return;
         }
@@ -280,27 +290,17 @@ export function StudentView({
             publicKey: {
                 challenge,
                 rp: { id: window.location.hostname, name: "AttendSync" },
-                user: {
-                    id: new TextEncoder().encode(selectedStudent!.uid),
-                    name: selectedStudent!.email,
-                    displayName: selectedStudent!.name,
-                },
+                user: { id: new TextEncoder().encode(user.uid), name: user.email!, displayName: user.displayName! },
                 pubKeyCredParams: [{ type: "public-key", alg: -7 }], // ES256
-                authenticatorSelection: {
-                    authenticatorAttachment: "platform",
-                    userVerification: "required",
-                },
+                authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
                 timeout: 60000,
             }
         });
 
-        if (credential) {
-            onSuccess();
-        } else {
-            throw new Error("Biometric authentication failed or was canceled.");
-        }
+        if (credential) onSuccess();
+        else throw new Error("Biometric authentication failed or was canceled.");
+
     } catch (error: any) {
-        console.error("Biometric Error:", error);
         toast({
             variant: "destructive",
             title: "Biometric Failed",
@@ -319,9 +319,7 @@ export function StudentView({
     handleBiometricAuth(recordQrAttendance);
   };
 
-  const studentAvatar = selectedStudent ? findImage(selectedStudent.avatarId) : null;
-  
-  if (!unit) {
+  if (units.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Card className="max-w-lg">
@@ -350,51 +348,28 @@ export function StudentView({
     );
   }
 
-
-  const renderStepContent = () => {
-    if (!selectedStudent) {
-      return <Loader2 className="animate-spin" />
-    }
+  const renderSignInContent = () => {
     switch (signInStep) {
       case 'methodChoice':
         return (
-            <>
-                <div className="flex items-center gap-4 p-4 rounded-lg w-full">
-                    <Avatar className="h-16 w-16">
-                        <AvatarImage src={studentAvatar?.imageUrl} alt={selectedStudent!.name} data-ai-hint={studentAvatar?.imageHint} />
-                        <AvatarFallback>{selectedStudent!.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="font-semibold text-lg">{selectedStudent!.name}</div>
-                </div>
-                <div className="w-full grid grid-cols-1 gap-4">
-                    <Button onClick={handleLocationAuth} size="lg"><MapPin className="mr-2"/>Sign In with Location</Button>
-                    <Button onClick={() => setSignInStep('scanning')} size="lg" variant="outline"><QrCode className="mr-2"/>Sign In with QR Code</Button>
-                </div>
-            </>
+            <div className="w-full grid grid-cols-1 gap-4">
+                <Button onClick={handleLocationAuth} size="lg"><MapPin className="mr-2"/>Sign In with Location</Button>
+                <Button onClick={() => setSignInStep('scanning')} size="lg" variant="outline"><QrCode className="mr-2"/>Sign In with QR Code</Button>
+            </div>
         );
       case 'locating':
-        return (
-          <div className="flex flex-col items-center gap-4 w-full text-center p-8">
-            <Loader2 className="h-10 w-10 animate-spin" />
-            <p>Getting your location...</p>
-            <p className="text-sm text-muted-foreground">Please approve the location request.</p>
-          </div>
-        );
+        return <div className="flex flex-col items-center gap-4 text-center p-8"><Loader2 className="h-10 w-10 animate-spin" /><p>Getting your location...</p></div>;
       case 'locationError':
         return (
           <div className="w-full space-y-4">
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>{signInError?.title}</AlertTitle>
-              <AlertDescription>{signInError?.description}</AlertDescription>
-            </Alert>
+            <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>{signInError?.title}</AlertTitle><AlertDescription>{signInError?.description}</AlertDescription></Alert>
             <Button onClick={resetSignInFlow} className="w-full">Try Again</Button>
           </div>
         );
       case 'scanning':
         return (
           <div className="flex flex-col items-center gap-4 w-full">
-            <p className="text-muted-foreground text-sm">Point your camera at the QR code on the main screen.</p>
+            <p className="text-muted-foreground text-sm">Point camera at the QR code.</p>
             <div id={qrReaderId} className="w-full aspect-square max-w-sm bg-muted rounded-lg overflow-hidden"/>
             <Button variant="outline" onClick={resetSignInFlow}>Cancel</Button>
           </div>
@@ -403,20 +378,9 @@ export function StudentView({
         return (
           <form onSubmit={handleSubmitPin} className="flex flex-col items-center gap-4 w-full">
             <Pin className="h-8 w-8 text-primary" />
-            <p className="text-muted-foreground text-center">Enter the 4-digit PIN shown on the main screen.</p>
-            <Input
-              type="number"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              className="text-center text-2xl font-mono tracking-widest h-14"
-              maxLength={4}
-              required
-              autoFocus
-            />
-            <div className="flex gap-2 w-full">
-              <Button type="button" variant="outline" onClick={() => setSignInStep('scanning')} className="w-full">Back</Button>
-              <Button type="submit" className="w-full">Submit</Button>
-            </div>
+            <p className="text-muted-foreground text-center">Enter the 4-digit PIN.</p>
+            <Input type="number" value={pin} onChange={(e) => setPin(e.target.value)} className="text-center text-2xl font-mono tracking-widest h-14" maxLength={4} required autoFocus />
+            <div className="flex gap-2 w-full"><Button type="button" variant="outline" onClick={() => setSignInStep('scanning')} className="w-full">Back</Button><Button type="submit" className="w-full">Submit</Button></div>
           </form>
         );
       case 'biometric':
@@ -431,47 +395,36 @@ export function StudentView({
             {signInStep === 'error' && <><XCircle className="h-10 w-10 text-destructive" /><p>{signInError?.title}</p><p className="text-sm text-muted-foreground">{signInError?.description}</p></>}
           </div>
         );
-      case 'idle':
       default:
         return <Loader2 className="h-10 w-10 animate-spin" />;
     }
   };
 
   return (
-    <div className="mt-8 flex flex-col items-center gap-8">
-      {!isSessionActive ? (
-        <Alert className="max-w-md">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>No Active Session</AlertTitle>
-          <AlertDescription>
-            There are no active attendance sessions for this unit right now.
-          </AlertDescription>
-        </Alert>
-      ) : (
-        sessionEndTime && <CountdownTimer endTime={sessionEndTime} />
-      )}
+    <div className="space-y-6">
+        <Card>
+            <CardHeader>
+                <CardTitle className="font-headline">Join a New Unit</CardTitle>
+                <CardDescription>Enter the unit code provided by your lecturer to enroll in a new course.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <JoinUnitForm setOpen={() => {}} />
+            </CardContent>
+        </Card>
+        
+        <div>
+          <h2 className="text-2xl font-bold font-headline mb-4">My Enrolled Units</h2>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {units.map(unit => (
+              <UnitCard key={unit.id} unit={unit} onSignIn={startSignIn} activeSessionId={activeSessionId} />
+            ))}
+          </div>
+        </div>
 
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="font-headline text-center">Student Sign-In</CardTitle>
-          <CardDescription className="text-center">
-            {signInStep !== 'idle' && "Follow the steps to sign in."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col items-center gap-4">
-          {renderStepContent()}
-        </CardContent>
-      </Card>
-
-      <Dialog open={!!studentForReport || signInStep === 'success'} onOpenChange={(isOpen) => { if (!isOpen) { onCloseReport(); resetSignInFlow(); } }}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="font-headline">My Attendance Report</DialogTitle>
-            <DialogDescription>
-              Your sign-in was successful. Here is your current attendance record for {unit.name}.
-            </DialogDescription>
-          </DialogHeader>
-          {studentForReport && <StudentAttendanceReport student={studentForReport} courseName={unit.name} />}
+      <Dialog open={isSignInDialogOpen} onOpenChange={(isOpen) => { if (!isOpen) { resetSignInFlow(); setIsSignInDialogOpen(false); } }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Student Sign-In</DialogTitle></DialogHeader>
+          {renderSignInContent()}
         </DialogContent>
       </Dialog>
     </div>

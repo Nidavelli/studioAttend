@@ -1,18 +1,18 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import QRCode from "react-qr-code";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import type { Student, Unit } from '@/lib/data';
+import type { Student, Unit, AttendanceRecord } from '@/lib/data';
 import type { SignedInStudent } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { AlertTriangle, Timer, QrCode, MapPin, Loader2, PlusCircle } from 'lucide-react';
+import { AlertTriangle, Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -30,7 +30,7 @@ import { useUser } from '@/firebase/auth/use-user';
 const CountdownTimer = ({ endTime }: { endTime: Date }) => {
   const [timeLeft, setTimeLeft] = useState('');
 
-  useEffect(() => {
+  React.useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
       const difference = endTime.getTime() - now.getTime();
@@ -163,13 +163,14 @@ export function LecturerDashboard({
   students,
   unit,
   signedInStudents,
+  attendanceRecords,
   isSessionActive,
   onToggleSession,
-  onManualAttendanceToggle,
   sessionDuration,
   setSessionDuration,
   sessionEndTime,
   sessionPin,
+  activeSessionId,
   lecturerLocation,
   setLecturerLocation,
   radius,
@@ -178,13 +179,14 @@ export function LecturerDashboard({
   students: Student[];
   unit: Unit;
   signedInStudents: SignedInStudent[];
+  attendanceRecords: AttendanceRecord[];
   isSessionActive: boolean;
   onToggleSession: () => void;
-  onManualAttendanceToggle: (studentId: string, week: string) => void;
   sessionDuration: number;
   setSessionDuration: (duration: number) => void;
   sessionEndTime: Date | null;
   sessionPin: string;
+  activeSessionId: string | null;
   lecturerLocation: GeolocationCoordinates | null;
   setLecturerLocation: (location: GeolocationCoordinates | null) => void;
   radius: number;
@@ -192,6 +194,7 @@ export function LecturerDashboard({
 }) {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isCreateUnitOpen, setIsCreateUnitOpen] = useState(false);
+  const [isCopied, setIsCopied] = React.useState(false);
   const { toast } = useToast();
 
   const handleSetLocation = () => {
@@ -228,6 +231,12 @@ export function LecturerDashboard({
       { enableHighAccuracy: true }
     );
   };
+
+  const copyUnitCode = () => {
+    navigator.clipboard.writeText(unit.code);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
   
   if (!unit) {
     return (
@@ -258,14 +267,26 @@ export function LecturerDashboard({
     );
   }
 
+  const qrCodeValue = isSessionActive ? JSON.stringify({ unitId: unit.id, sessionId: activeSessionId }) : '';
+
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
       <Card className="lg:col-span-1">
         <CardHeader>
           <CardTitle className="font-headline">Session Control</CardTitle>
-          <CardDescription>Manage the attendance session.</CardDescription>
+          <CardDescription>Manage the attendance session for <span className="font-bold">{unit.name}</span>.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
+          <div className="w-full space-y-2">
+            <Label>Unit Code (for students)</Label>
+            <div className="flex items-center space-x-2">
+                <Input type="text" readOnly value={unit.code} className="font-mono" />
+                <Button variant="outline" size="sm" onClick={copyUnitCode}>
+                    {isCopied ? <CheckCircle className="h-4 w-4 text-green-500" /> : "Copy"}
+                </Button>
+            </div>
+          </div>
+          <hr className="w-full border-t my-2" />
           {!isSessionActive ? (
             <>
               <div className="w-full space-y-4">
@@ -347,13 +368,13 @@ export function LecturerDashboard({
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="font-headline">Live Session Details</CardTitle>
-          <CardDescription>Scan QR and enter the PIN to sign in.</CardDescription>
+          <CardDescription>Students scan the QR code and enter the PIN to sign in.</CardDescription>
         </CardHeader>
         <CardContent>
            {isSessionActive ? (
             <div className="flex flex-col md:flex-row items-center justify-center gap-6">
                 <div className="bg-white p-4 rounded-lg">
-                    <QRCode value={unit.name} size={160} />
+                    <QRCode value={qrCodeValue} size={160} />
                 </div>
                 <div className="flex flex-col items-center gap-2">
                     <p className="text-muted-foreground text-sm">CURRENT PIN</p>
@@ -431,20 +452,20 @@ export function LecturerDashboard({
       <Card className="md:col-span-2 lg:col-span-3">
         <CardHeader>
           <CardTitle className="font-headline">Attendance Analytics</CardTitle>
-          <CardDescription>Overall attendance records for all students.</CardDescription>
+          <CardDescription>Overall attendance records for all students in this unit.</CardDescription>
         </CardHeader>
         <CardContent>
-          <AttendanceAnalytics students={students} attendanceThreshold={unit.attendanceThreshold} />
+          <AttendanceAnalytics students={students} unit={unit} attendanceRecords={attendanceRecords} />
         </CardContent>
       </Card>
 
       <Card className="md:col-span-2 lg:col-span-3">
         <CardHeader>
           <CardTitle className="font-headline">Printable Attendance Report</CardTitle>
-          <CardDescription>Semester-wide attendance sheet for manual records and printing.</CardDescription>
+          <CardDescription>Semester-wide attendance sheet. This is a display-only view.</CardDescription>
         </CardHeader>
         <CardContent>
-          <AttendanceReport students={students} onManualAttendanceToggle={onManualAttendanceToggle} />
+          <AttendanceReport students={students} unit={unit} attendanceRecords={attendanceRecords} />
         </CardContent>
       </Card>
     </div>
