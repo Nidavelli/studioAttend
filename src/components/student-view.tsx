@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,16 @@ import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { useFirestore } from '@/firebase/provider';
 import { Skeleton } from './ui/skeleton';
 
+const GeofenceMap = dynamic(() => import('./geofence-map').then((mod) => mod.GeofenceMap), { 
+    ssr: false,
+    loading: () => <Skeleton className="h-64 w-full" />
+});
+
+type LocationErrorContext = {
+    studentLocation: GeolocationCoordinates;
+    lecturerLocation: GeolocationCoordinates;
+    radius: number;
+} | null;
 
 type SignInStep = 'idle' | 'methodChoice' | 'locating' | 'scanning' | 'pinEntry' | 'recording' | 'success' | 'error' | 'locationError';
 type SignInError = {
@@ -186,6 +197,7 @@ export function StudentView({
   const [viewingAttendanceUnit, setViewingAttendanceUnit] = useState<UnitWithAttendance | null>(null);
   const [viewingAttendanceRecords, setViewingAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [isLoadingAttendance, setIsLoadingAttendance] = useState(false);
+  const [locationErrorContext, setLocationErrorContext] = useState<LocationErrorContext>(null);
 
   useEffect(() => {
     setDeviceId(generateSimpleId());
@@ -264,6 +276,7 @@ export function StudentView({
     setQrData(null);
     if(signingInUnitId) setSigningInUnitId(null);
     setShowConfetti(false);
+    setLocationErrorContext(null);
   };
   
   const startSignIn = (unitId: string) => {
@@ -313,6 +326,14 @@ export function StudentView({
           setSignInStep('success');
         } else {
           if (distance) {
+              const unit = units.find(u => u.id === signingInUnitId);
+              if(unit && unit.lecturerLocation && unit.sessionRadius) {
+                  setLocationErrorContext({
+                      studentLocation,
+                      lecturerLocation: unit.lecturerLocation,
+                      radius: unit.sessionRadius
+                  });
+              }
               setSignInError({ title: "Too Far Away", description: `You are approximately ${distance} meters from the classroom. Please move closer.` });
           } else {
               setSignInError({ title: "Sign-in Failed", description: `Could not verify your location or you may have already signed in.` });
@@ -381,6 +402,13 @@ export function StudentView({
         return (
           <div className="w-full space-y-4">
             <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>{signInError?.title}</AlertTitle><AlertDescription>{signInError?.description}</AlertDescription></Alert>
+            {locationErrorContext && (
+                <GeofenceMap 
+                    center={locationErrorContext.lecturerLocation} 
+                    radius={locationErrorContext.radius} 
+                    studentLocation={locationErrorContext.studentLocation}
+                />
+            )}
             <Button onClick={resetSignInFlow} className="w-full">Try Again</Button>
           </div>
         );
@@ -466,14 +494,16 @@ export function StudentView({
 
       <Dialog open={!!viewingAttendanceUnit} onOpenChange={(isOpen) => { if (!isOpen) setViewingAttendanceUnit(null); }}>
         <DialogContent className="max-w-3xl">
-          {viewingAttendanceUnit && (
-             <DialogHeader>
-                <DialogTitle>My Attendance for {viewingAttendanceUnit.name}</DialogTitle>
-                <DialogDescription>
-                    A record of your attendance for each session in this unit. Check marks indicate presence.
-                </DialogDescription>
+           <DialogHeader>
+              {viewingAttendanceUnit && (
+                <>
+                  <DialogTitle>My Attendance for {viewingAttendanceUnit.name}</DialogTitle>
+                  <DialogDescription>
+                      A record of your attendance for each session in this unit. Check marks indicate presence.
+                  </DialogDescription>
+                </>
+              )}
             </DialogHeader>
-          )}
           {isLoadingAttendance ? (
             <div className="space-y-4 p-8">
               <Skeleton className="h-8 w-3/4 mx-auto" />

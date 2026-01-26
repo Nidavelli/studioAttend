@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import QRCode from "react-qr-code";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,7 @@ import { AttendanceReport } from '@/components/attendance-report';
 import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import type { GeolocationCoordinates } from './student-view';
+import type { GeolocationCoordinates } from '@/app/page';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { useForm } from 'react-hook-form';
@@ -24,6 +25,12 @@ import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { createUnit } from '@/lib/units';
 import { useUser } from '@/firebase/auth/use-user';
+import { Skeleton } from './ui/skeleton';
+
+const GeofenceMap = dynamic(() => import('./geofence-map').then((mod) => mod.GeofenceMap), { 
+    ssr: false,
+    loading: () => <Skeleton className="h-64 w-full" />
+});
 
 
 const CountdownTimer = ({ endTime }: { endTime: Date }) => {
@@ -52,25 +59,6 @@ const CountdownTimer = ({ endTime }: { endTime: Date }) => {
         <h4 className="font-semibold text-xs flex items-center justify-center gap-2"><Timer className="h-4 w-4"/> TIME REMAINING</h4>
         <div className="text-2xl font-mono font-bold tracking-widest">{timeLeft}</div>
       </div>
-  );
-};
-
-const LocationMap = ({ location }: { location: GeolocationCoordinates }) => {
-  const { lat, lng } = location;
-  const delta = 0.002;
-  const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
-
-  return (
-    <div className="w-full space-y-2">
-        <Label>Location Preview</Label>
-        <iframe
-            className="w-full h-40 rounded-md border"
-            loading="lazy"
-            allowFullScreen
-            src={mapUrl}
-        ></iframe>
-    </div>
   );
 };
 
@@ -313,7 +301,12 @@ export function LecturerDashboard({
                     </div>
                 </div>
 
-                {lecturerLocation && <LocationMap location={lecturerLocation} />}
+                {lecturerLocation && (
+                    <div className='space-y-2'>
+                        <Label>Geofence Preview</Label>
+                        <GeofenceMap center={lecturerLocation} radius={radius} />
+                    </div>
+                )}
 
                  <div className="space-y-2">
                     <Label htmlFor="radius">Radius (meters)</Label>
@@ -357,8 +350,9 @@ export function LecturerDashboard({
                </Button>
                {sessionEndTime && <CountdownTimer endTime={sessionEndTime} />}
                {lecturerLocation && (
-                 <div className="w-full pt-4 mt-4 border-t">
-                   <LocationMap location={lecturerLocation} />
+                 <div className="w-full pt-4 mt-4 border-t space-y-2">
+                   <Label>Live Session Geofence</Label>
+                   <GeofenceMap center={lecturerLocation} radius={radius} />
                  </div>
                )}
              </>

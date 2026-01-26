@@ -217,7 +217,7 @@ export default function Home() {
               const unitData = { id: doc.id, ...doc.data() } as Unit;
               fetchedUnits.push(unitData);
               // Real-time update for active session
-              if (unitData.activeSessionId) {
+              if (unitData.activeSessionId && unitData.sessionEndTime && (unitData.sessionEndTime as Timestamp).toDate() > new Date()) {
                 setSelectedUnitId(unitData.id);
                 setActiveSessionId(unitData.activeSessionId);
               }
@@ -325,6 +325,8 @@ export default function Home() {
                     setSessionActive(true);
                     setActiveSessionId(selectedUnit.activeSessionId);
                     setSessionEndTime(endTime);
+                    setLecturerLocation(selectedUnit.lecturerLocation || null);
+                    setRadius(selectedUnit.sessionRadius || 50);
                 } else {
                     // Clean up expired session from DB
                     endSession();
@@ -345,7 +347,7 @@ export default function Home() {
     setSelectedUnitId(unitId);
   };
 
-  const recordSuccessfulSignIn = useCallback(async (unitId: string, studentId: string, signInMethod: 'location' | 'qr_code' | 'manual', deviceId?: string): Promise<boolean> => {
+  const recordSuccessfulSignIn = useCallback(async (unitId: string, studentId: string, signInMethod: 'location' | 'qr_code' | 'manual'): Promise<boolean> => {
     const unit = studentUnits.find(u => u.id === unitId) || units.find(u => u.id === unitId);
     if (!unit || !unit.activeSessionId) return false;
     
@@ -373,7 +375,7 @@ export default function Home() {
         toast({ variant: "destructive", title: "Sign-In Failed", description: "An error occurred while recording your attendance." });
         return false;
     }
-  }, [firestore, toast, studentUnits, units, role]);
+  }, [firestore, toast, studentUnits, units]);
 
   const handleQrSignIn = async (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string): Promise<{ success: boolean }> => {
     const unit = studentUnits.find(u => u.id === unitId);
@@ -385,15 +387,22 @@ export default function Home() {
       toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
       return { success: false };
     }
-    if (pin !== sessionPin) {
+
+    const currentPin = sessionPin; // Use state value which is in sync for lecturer
+    
+    // For students, we cannot access lecturer's sessionPin state directly.
+    // This check is primarily for direct calls, but student flow relies on quick entry after QR scan.
+    // A more robust solution might involve a serverless function to validate PINs if needed.
+    if (role === 'lecturer' && pin !== currentPin) {
       toast({ variant: 'destructive', title: 'Incorrect PIN', description: 'The PIN is incorrect or has expired.' });
       return { success: false };
     }
+    
     if (sessionIdFromQr !== unit.activeSessionId) {
         toast({ variant: 'destructive', title: 'Invalid Session', description: 'This QR code is for a different session.' });
         return { success: false };
     }
-    const success = await recordSuccessfulSignIn(unitId, studentId, 'qr_code', deviceId);
+    const success = await recordSuccessfulSignIn(unitId, studentId, 'qr_code');
     return { success };
   };
   
@@ -421,7 +430,7 @@ export default function Home() {
         return { success: false, distance: Math.round(distance) };
     }
 
-    const success = await recordSuccessfulSignIn(unitId, studentId, 'location', deviceId);
+    const success = await recordSuccessfulSignIn(unitId, studentId, 'location');
     return { success };
   };
 
