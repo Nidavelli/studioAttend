@@ -6,9 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, CheckCircle, XCircle, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles } from 'lucide-react';
-import type { Student, UnitWithAttendance } from '@/lib/data';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Loader2, Fingerprint, CheckCircle, XCircle, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles, BookOpen } from 'lucide-react';
+import type { Student, UnitWithAttendance, AttendanceRecord } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import { generateSimpleId } from '@/lib/utils';
 import { Html5Qrcode, type Html5QrcodeResult } from 'html5-qrcode';
@@ -22,6 +22,10 @@ import { Progress } from '@/components/ui/progress';
 import type { GeolocationCoordinates, UnitStatus } from '@/app/page';
 import Confetti from 'react-confetti';
 import { useWindowSize } from '@react-hook/window-size';
+import { StudentAttendanceGrid } from './student-attendance-grid';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { useFirestore } from '@/firebase/provider';
+import { Skeleton } from './ui/skeleton';
 
 
 type SignInStep = 'idle' | 'methodChoice' | 'locating' | 'scanning' | 'pinEntry' | 'biometric' | 'recording' | 'success' | 'error' | 'locationError';
@@ -85,11 +89,13 @@ function JoinUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
 function UnitCard({ 
   unit, 
   status,
-  onSignIn, 
+  onSignIn,
+  onViewAttendance,
 }: { 
   unit: UnitWithAttendance, 
   status: UnitStatus,
   onSignIn: (unitId: string) => void,
+  onViewAttendance: (unit: UnitWithAttendance) => void,
 }) {
   const totalSessions = unit.sessionHistory?.length || 0;
   const percentage = totalSessions > 0 ? Math.round((unit.attendedSessionsCount / totalSessions) * 100) : 0;
@@ -130,9 +136,15 @@ function UnitCard({
           </p>
         </div>
       </CardContent>
-      <CardFooter>
+      <CardFooter className="grid grid-cols-2 gap-2">
         <Button 
-          className={`w-full ${status === 'active' ? 'animate-pulse' : ''}`}
+          variant="outline"
+          onClick={() => onViewAttendance(unit)}
+        >
+          <BookOpen className="mr-2 h-4 w-4" /> View
+        </Button>
+        <Button 
+          className={`${status === 'active' ? 'animate-pulse' : ''}`}
           disabled={status !== 'active'}
           onClick={() => onSignIn(unit.id)}
         >
@@ -156,6 +168,7 @@ export function StudentView({
   onQrSignIn: (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Promise<{ success: boolean }>;
 }) {
   const { user } = useUser();
+  const firestore = useFirestore();
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
   const [signInError, setSignInError] = useState<SignInError>(null);
   const [pin, setPin] = useState('');
@@ -170,9 +183,34 @@ export function StudentView({
   const [showConfetti, setShowConfetti] = useState(false);
   const [width, height] = useWindowSize();
 
+  const [viewingAttendanceUnit, setViewingAttendanceUnit] = useState<UnitWithAttendance | null>(null);
+  const [viewingAttendanceRecords, setViewingAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [isLoadingAttendance, setIsLoadingAttendance] = useState(false);
+
   useEffect(() => {
     setDeviceId(generateSimpleId());
   }, []);
+
+  useEffect(() => {
+    if (viewingAttendanceUnit && user) {
+      setIsLoadingAttendance(true);
+      const attendanceQuery = query(
+        collection(firestore, `units/${viewingAttendanceUnit.id}/attendance`),
+        where("studentId", "==", user.uid)
+      );
+      const unsubscribe = onSnapshot(attendanceQuery, (snapshot) => {
+        const records: AttendanceRecord[] = [];
+        snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data() } as AttendanceRecord));
+        setViewingAttendanceRecords(records);
+        setIsLoadingAttendance(false);
+      }, (error) => {
+        console.error("Error fetching attendance details:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch attendance details.' });
+        setIsLoadingAttendance(false);
+      });
+      return () => unsubscribe();
+    }
+  }, [viewingAttendanceUnit, user, firestore, toast]);
 
   useEffect(() => {
     if (signInStep === 'scanning' && isSignInDialogOpen) {
@@ -233,6 +271,10 @@ export function StudentView({
     setIsSignInDialogOpen(true);
     setSignInStep('methodChoice');
   }
+
+  const handleViewAttendance = (unit: UnitWithAttendance) => {
+    setViewingAttendanceUnit(unit);
+  };
 
   const recordQrAttendance = async () => {
     if (!user || !qrData || !signingInUnitId) return;
@@ -423,7 +465,20 @@ export function StudentView({
                 <CardDescription>Enter the unit code provided by your lecturer to enroll in a new course.</CardDescription>
             </CardHeader>
             <CardContent>
-                <JoinUnitForm setOpen={() => {}} />
+                <Dialog open={isJoinUnitOpen} onOpenChange={setIsJoinUnitOpen}>
+                    <DialogTrigger asChild>
+                        <Button className="w-full"><PlusCircle className="mr-2"/> Join a Unit</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                        <DialogTitle>Join a New Unit</DialogTitle>
+                        <DialogDescription>
+                            Enter the unit code provided by your lecturer.
+                        </DialogDescription>
+                        </DialogHeader>
+                        <JoinUnitForm setOpen={setIsJoinUnitOpen} />
+                    </DialogContent>
+                </Dialog>
             </CardContent>
         </Card>
         
@@ -436,6 +491,7 @@ export function StudentView({
                 unit={unit} 
                 status={unitStatuses[unit.id] || 'inactive'}
                 onSignIn={startSignIn}
+                onViewAttendance={handleViewAttendance}
               />
             ))}
           </div>
@@ -445,6 +501,23 @@ export function StudentView({
         <DialogContent>
           <DialogHeader><DialogTitle>Student Sign-In</DialogTitle></DialogHeader>
           {renderSignInContent()}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!viewingAttendanceUnit} onOpenChange={(isOpen) => { if (!isOpen) setViewingAttendanceUnit(null); }}>
+        <DialogContent className="max-w-3xl">
+          {isLoadingAttendance ? (
+            <div className="space-y-4 p-8">
+              <Skeleton className="h-8 w-3/4 mx-auto" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : viewingAttendanceUnit && user ? (
+            <StudentAttendanceGrid 
+              unit={viewingAttendanceUnit} 
+              studentId={user.uid}
+              attendanceRecords={viewingAttendanceRecords}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

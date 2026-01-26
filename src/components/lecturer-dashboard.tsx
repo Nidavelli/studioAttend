@@ -12,10 +12,9 @@ import type { SignedInStudent } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { AlertTriangle, Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle } from 'lucide-react';
+import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { GeolocationCoordinates } from './student-view';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -162,7 +161,7 @@ function CreateUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
 export function LecturerDashboard({
   students,
   unit,
-  signedInStudents,
+  liveLedgerStudents,
   attendanceRecords,
   isSessionActive,
   onToggleSession,
@@ -179,7 +178,7 @@ export function LecturerDashboard({
 }: {
   students: Student[];
   unit: Unit;
-  signedInStudents: SignedInStudent[];
+  liveLedgerStudents: SignedInStudent[];
   attendanceRecords: AttendanceRecord[];
   isSessionActive: boolean;
   onToggleSession: () => void;
@@ -235,6 +234,7 @@ export function LecturerDashboard({
   };
 
   const copyUnitCode = () => {
+    if (!unit?.code) return;
     navigator.clipboard.writeText(unit.code);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
@@ -408,8 +408,8 @@ export function LecturerDashboard({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {signedInStudents.length > 0 ? (
-                  signedInStudents.map((student) => {
+                {liveLedgerStudents.length > 0 ? (
+                  liveLedgerStudents.map((student) => {
                     const avatar = findImage(student.avatarId);
                     return (
                       <TableRow key={student.id}>
@@ -420,18 +420,6 @@ export function LecturerDashboard({
                               <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <span className="font-medium">{student.name}</span>
-                            {student.isDuplicateDevice && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Signed in from a previously used device.</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-mono">{student.signedInAt}</TableCell>

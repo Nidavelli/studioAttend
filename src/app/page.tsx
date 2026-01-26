@@ -29,7 +29,6 @@ export type SignedInStudent = {
   name: string;
   avatarId: string;
   signedInAt: string;
-  isDuplicateDevice: boolean;
 };
 
 export type UnitStatus = 'active' | 'recently_closed' | 'inactive';
@@ -73,6 +72,21 @@ export default function Home() {
 
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  
+  const endSession = useCallback(async () => {
+    if (selectedUnitId) {
+        const unitRef = doc(firestore, 'units', selectedUnitId);
+        await updateDoc(unitRef, {
+            activeSessionId: null,
+            sessionEndTime: Timestamp.fromDate(new Date()), // Keep endTime to detect 'recently_closed'
+        });
+    }
+    setSessionActive(false);
+    // Do not nullify sessionEndTime here
+    setSessionPin('');
+    setActiveSessionId(null);
+    setLecturerLocation(null);
+  }, [selectedUnitId, firestore]);
 
   const selectedUnit = useMemo(() => {
     return units.find(u => u.id === selectedUnitId) || null;
@@ -87,25 +101,23 @@ export default function Home() {
   const [lecturerLocation, setLecturerLocation] = useState<GeolocationCoordinates | null>(null);
   const [radius, setRadius] = useState<number>(50);
 
-  const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
-  const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
+  const liveLedgerStudents = useMemo(() => {
+    if (!sessionActive || !activeSessionId) return [];
 
-  const endSession = useCallback(async () => {
-    if (selectedUnitId) {
-        const unitRef = doc(firestore, 'units', selectedUnitId);
-        await updateDoc(unitRef, {
-            activeSessionId: null,
-            sessionEndTime: null, // Keep endTime to detect 'recently_closed'
-        });
-    }
-    setSessionActive(false);
-    setSignedInStudents([]);
-    setUsedDeviceIds(new Set());
-    // Do not nullify sessionEndTime here
-    setSessionPin('');
-    setActiveSessionId(null);
-    setLecturerLocation(null);
-  }, [selectedUnitId, firestore]);
+    const sessionRecords = attendanceRecords
+        .filter(rec => rec.sessionId === activeSessionId)
+        .sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0)); // Sort by timestamp descending
+
+    return sessionRecords.map(record => {
+        const student = studentsInUnit.find(s => s.uid === record.studentId);
+        return student ? {
+            id: student.uid,
+            name: student.name,
+            avatarId: student.avatarId,
+            signedInAt: record.timestamp?.toDate()?.toLocaleTimeString() || 'Processing...',
+        } : null;
+    }).filter(Boolean) as SignedInStudent[];
+  }, [sessionActive, activeSessionId, attendanceRecords, studentsInUnit]);
 
   // Session timer and PIN generation logic
   useEffect(() => {
@@ -354,26 +366,6 @@ export default function Home() {
             timestamp: serverTimestamp(),
             signInMethod: signInMethod,
         });
-
-        if (role === 'lecturer') {
-          const student = studentsInUnit.find((s) => s.uid === studentId);
-          if (!student) return false;
-          let isDuplicateDevice = false;
-          if (deviceId) {
-              isDuplicateDevice = usedDeviceIds.has(deviceId);
-              setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
-          }
-
-          setSignedInStudents((prev) => [{
-            id: student!.uid,
-            name: student!.name,
-            avatarId: student!.avatarId,
-            signedInAt: new Date().toLocaleTimeString(),
-            isDuplicateDevice: isDuplicateDevice,
-          }, ...prev]);
-        
-          toast({ title: "Sign-In Successful!", description: `${student!.name}'s attendance for ${unit.name} has been recorded.` });
-        }
         
         return true;
     } catch (e) {
@@ -381,7 +373,7 @@ export default function Home() {
         toast({ variant: "destructive", title: "Sign-In Failed", description: "An error occurred while recording your attendance." });
         return false;
     }
-  }, [firestore, studentsInUnit, usedDeviceIds, toast, studentUnits, units, role]);
+  }, [firestore, toast, studentUnits, units, role]);
 
   const handleQrSignIn = async (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string): Promise<{ success: boolean }> => {
     const unit = studentUnits.find(u => u.id === unitId);
@@ -558,7 +550,7 @@ export default function Home() {
             <LecturerDashboard
               students={studentsInUnit}
               unit={selectedUnit!}
-              signedInStudents={signedInStudents}
+              liveLedgerStudents={liveLedgerStudents}
               attendanceRecords={attendanceRecords}
               isSessionActive={sessionActive}
               onToggleSession={toggleSession}
