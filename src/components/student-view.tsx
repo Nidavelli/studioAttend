@@ -20,6 +20,9 @@ import { joinUnit } from '@/lib/units';
 import { useUser } from '@/firebase/auth/use-user';
 import { Progress } from '@/components/ui/progress';
 import type { GeolocationCoordinates, UnitStatus } from '@/app/page';
+import Confetti from 'react-confetti';
+import { useWindowSize } from '@react-hook/window-size';
+
 
 type SignInStep = 'idle' | 'methodChoice' | 'locating' | 'scanning' | 'pinEntry' | 'biometric' | 'recording' | 'success' | 'error' | 'locationError';
 type SignInError = {
@@ -149,8 +152,8 @@ export function StudentView({
 }: {
   units: UnitWithAttendance[];
   unitStatuses: Record<string, UnitStatus>;
-  onLocationSignIn: (unitId: string, studentId: string, location: GeolocationCoordinates, deviceId: string) => { student: Student | null, distance?: number };
-  onQrSignIn: (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Student | null;
+  onLocationSignIn: (unitId: string, studentId: string, location: GeolocationCoordinates, deviceId: string) => Promise<{ success: boolean, distance?: number }>;
+  onQrSignIn: (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Promise<{ success: boolean }>;
 }) {
   const { user } = useUser();
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
@@ -164,7 +167,8 @@ export function StudentView({
   const [isJoinUnitOpen, setIsJoinUnitOpen] = useState(false);
   const [isSignInDialogOpen, setIsSignInDialogOpen] = useState(false);
   const [signingInUnitId, setSigningInUnitId] = useState<string | null>(null);
-
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [width, height] = useWindowSize();
 
   useEffect(() => {
     setDeviceId(generateSimpleId());
@@ -221,6 +225,7 @@ export function StudentView({
     setSignInError(null);
     setQrData(null);
     setSigningInUnitId(null);
+    setShowConfetti(false);
   };
   
   const startSignIn = (unitId: string) => {
@@ -229,19 +234,17 @@ export function StudentView({
     setSignInStep('methodChoice');
   }
 
-  const recordQrAttendance = () => {
+  const recordQrAttendance = async () => {
     if (!user || !qrData || !signingInUnitId) return;
     setSignInStep('recording');
-    setTimeout(() => {
-      const updatedStudent = onQrSignIn(signingInUnitId, user.uid, deviceId!, pin, qrData.sessionId);
-      if (updatedStudent) {
-        setSignInStep('success');
-      } else {
-        setSignInError({ title: "Sign-in Failed", description: "The PIN was incorrect or the session expired. Please try again." });
-        setSignInStep('error');
-        setTimeout(() => setSignInStep('pinEntry'), 3000);
-      }
-    }, 500);
+    const { success } = await onQrSignIn(signingInUnitId, user.uid, deviceId!, pin, qrData.sessionId);
+    if (success) {
+      setShowConfetti(true);
+      setSignInStep('success');
+    } else {
+      setSignInError({ title: "Sign-in Failed", description: "The PIN was incorrect, session expired, or you already signed in." });
+      setSignInStep('error');
+    }
   };
   
   const handleLocationAuth = () => {
@@ -254,28 +257,26 @@ export function StudentView({
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const studentLocation = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         };
         setSignInStep('recording');
         
-        setTimeout(() => {
-          const { student: updatedStudent, distance } = onLocationSignIn(signingInUnitId, user.uid, studentLocation, deviceId!);
-          if (updatedStudent) {
-            setSignInStep('success');
-
+        const { success, distance } = await onLocationSignIn(signingInUnitId, user.uid, studentLocation, deviceId!);
+        
+        if (success) {
+          setShowConfetti(true);
+          setSignInStep('success');
+        } else {
+          if (distance) {
+              setSignInError({ title: "Too Far Away", description: `You are approximately ${distance} meters from the classroom. Please move closer.` });
           } else {
-            if (distance) {
-               setSignInError({ title: "Too Far Away", description: `You are approximately ${distance} meters from the classroom. Please move closer.` });
-            } else {
-               setSignInError({ title: "Sign-in Failed", description: `Could not verify your location. Please try again.` });
-            }
-            setSignInStep('locationError');
+              setSignInError({ title: "Sign-in Failed", description: `Could not verify your location or you may have already signed in.` });
           }
-        }, 500);
-
+          setSignInStep('locationError');
+        }
       },
       (error) => {
         setSignInError({ title: "Location Access Denied", description: "Please enable location services in your browser settings, or use the QR code sign-in method." });
@@ -404,7 +405,7 @@ export function StudentView({
           <div className="flex flex-col items-center gap-4 w-full text-center p-8">
             {signInStep === 'biometric' && <><Fingerprint className="h-10 w-10 animate-pulse" /><p>Verify with biometrics...</p></>}
             {signInStep === 'recording' && <><Loader2 className="h-10 w-10 animate-spin" /><p>Recording attendance...</p></>}
-            {signInStep === 'success' && <><CheckCircle className="h-10 w-10 text-green-500" /><p>Sign-in Successful!</p></>}
+            {signInStep === 'success' && <><CheckCircle className="h-10 w-10 text-green-500" /><p>Sign-in Successful!</p><p className="text-sm text-muted-foreground">Your attendance has been recorded.</p></>}
             {signInStep === 'error' && <><XCircle className="h-10 w-10 text-destructive" /><p>{signInError?.title}</p><p className="text-sm text-muted-foreground">{signInError?.description}</p></>}
           </div>
         );
@@ -415,6 +416,7 @@ export function StudentView({
 
   return (
     <div className="space-y-6">
+        {showConfetti && <Confetti width={width} height={height} recycle={false} onConfettiComplete={() => setShowConfetti(false)} />}
         <Card>
             <CardHeader>
                 <CardTitle className="font-headline">Join a New Unit</CardTitle>

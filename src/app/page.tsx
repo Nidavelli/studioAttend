@@ -333,9 +333,9 @@ export default function Home() {
     setSelectedUnitId(unitId);
   };
 
-  const recordSuccessfulSignIn = useCallback(async (unitId: string, studentId: string, signInMethod: 'location' | 'qr_code' | 'manual', deviceId?: string) => {
+  const recordSuccessfulSignIn = useCallback(async (unitId: string, studentId: string, signInMethod: 'location' | 'qr_code' | 'manual', deviceId?: string): Promise<boolean> => {
     const unit = studentUnits.find(u => u.id === unitId) || units.find(u => u.id === unitId);
-    if (!unit || !unit.activeSessionId) return null;
+    if (!unit || !unit.activeSessionId) return false;
     
     const sessionId = unit.activeSessionId;
     const attendanceColRef = collection(firestore, `units/${unitId}/attendance`);
@@ -344,88 +344,93 @@ export default function Home() {
     const dupeSnapshot = await getDocs(dupeQuery);
     if (!dupeSnapshot.empty) {
         toast({ variant: "destructive", title: "Already Signed In", description: "You have already signed in for this session." });
-        return studentsInUnit.find((s) => s.uid === studentId) || null;
+        return false;
     }
 
-    const student = studentsInUnit.find((s) => s.uid === studentId);
-    if (!student && role !== 'student') return null; // Students won't have studentsInUnit populated
+    try {
+        await addDoc(attendanceColRef, {
+            studentId: studentId,
+            sessionId: sessionId,
+            timestamp: serverTimestamp(),
+            signInMethod: signInMethod,
+        });
 
-    await addDoc(attendanceColRef, {
-        studentId: studentId,
-        sessionId: sessionId,
-        timestamp: serverTimestamp(),
-        signInMethod: signInMethod,
-    });
+        if (role === 'lecturer') {
+          const student = studentsInUnit.find((s) => s.uid === studentId);
+          if (!student) return false;
+          let isDuplicateDevice = false;
+          if (deviceId) {
+              isDuplicateDevice = usedDeviceIds.has(deviceId);
+              setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
+          }
 
-    if (role === 'lecturer') {
-      let isDuplicateDevice = false;
-      if (deviceId) {
-          isDuplicateDevice = usedDeviceIds.has(deviceId);
-          setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
-      }
-
-      setSignedInStudents((prev) => [{
-        id: student!.uid,
-        name: student!.name,
-        avatarId: student!.avatarId,
-        signedInAt: new Date().toLocaleTimeString(),
-        isDuplicateDevice: isDuplicateDevice,
-      }, ...prev]);
-    
-      toast({ title: "Sign-In Successful!", description: `${student!.name}'s attendance for ${unit.name} has been recorded.` });
+          setSignedInStudents((prev) => [{
+            id: student!.uid,
+            name: student!.name,
+            avatarId: student!.avatarId,
+            signedInAt: new Date().toLocaleTimeString(),
+            isDuplicateDevice: isDuplicateDevice,
+          }, ...prev]);
+        
+          toast({ title: "Sign-In Successful!", description: `${student!.name}'s attendance for ${unit.name} has been recorded.` });
+        }
+        
+        return true;
+    } catch (e) {
+        console.error("Error recording attendance:", e);
+        toast({ variant: "destructive", title: "Sign-In Failed", description: "An error occurred while recording your attendance." });
+        return false;
     }
-    
-    return student;
   }, [firestore, studentsInUnit, usedDeviceIds, toast, studentUnits, units, role]);
 
-  const handleQrSignIn = (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string): Student | null => {
+  const handleQrSignIn = async (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string): Promise<{ success: boolean }> => {
     const unit = studentUnits.find(u => u.id === unitId);
-    if (!unit) return null;
+    if (!unit) return { success: false };
     
     const sessionEndTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
 
     if (sessionEndTime && new Date() > sessionEndTime) {
       toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
-      return null;
+      return { success: false };
     }
     if (pin !== sessionPin) {
       toast({ variant: 'destructive', title: 'Incorrect PIN', description: 'The PIN is incorrect or has expired.' });
-      return null;
+      return { success: false };
     }
     if (sessionIdFromQr !== unit.activeSessionId) {
         toast({ variant: 'destructive', title: 'Invalid Session', description: 'This QR code is for a different session.' });
-        return null;
+        return { success: false };
     }
-    recordSuccessfulSignIn(unitId, studentId, 'qr_code', deviceId);
-    return null;
+    const success = await recordSuccessfulSignIn(unitId, studentId, 'qr_code', deviceId);
+    return { success };
   };
   
-  const handleLocationSignIn = (unitId: string, studentId: string, studentLocation: GeolocationCoordinates, deviceId: string): { student: Student | null; distance?: number } => {
+  const handleLocationSignIn = async (unitId: string, studentId: string, studentLocation: GeolocationCoordinates, deviceId: string): Promise<{ success: boolean; distance?: number }> => {
     const unit = studentUnits.find(u => u.id === unitId);
-    if (!unit) return { student: null };
+    if (!unit) return { success: false };
     
     const sessionEndTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
     if (sessionEndTime && new Date() > sessionEndTime) {
       toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
-      return { student: null };
+      return { success: false };
     }
 
     const locationForCheck = unit.lecturerLocation;
 
     if (!locationForCheck) {
         toast({ variant: "destructive", title: "Location Not Set", description: "The lecturer has not set a location for this session." });
-        return { student: null };
+        return { success: false };
     }
     
     const distance = haversineDistance(studentLocation, locationForCheck);
     const sessionRadius = unit.sessionRadius || 50; // Use persisted radius or default
 
     if (distance > sessionRadius) {
-        return { student: null, distance: Math.round(distance) };
+        return { success: false, distance: Math.round(distance) };
     }
 
-    recordSuccessfulSignIn(unitId, studentId, 'location', deviceId);
-    return { student: null };
+    const success = await recordSuccessfulSignIn(unitId, studentId, 'location', deviceId);
+    return { success };
   };
 
   const handleManualSignIn = async (studentId: string, sessionId: string) => {
