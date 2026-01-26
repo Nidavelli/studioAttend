@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
-import { Loader2, Fingerprint, CheckCircle, XCircle, Timer, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles } from 'lucide-react';
-import type { Student, Unit, UnitWithAttendance } from '@/lib/data';
+import { Loader2, Fingerprint, CheckCircle, XCircle, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles } from 'lucide-react';
+import type { Student, UnitWithAttendance } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import { generateSimpleId } from '@/lib/utils';
 import { Html5Qrcode, type Html5QrcodeResult } from 'html5-qrcode';
@@ -19,11 +19,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { joinUnit } from '@/lib/units';
 import { useUser } from '@/firebase/auth/use-user';
 import { Progress } from '@/components/ui/progress';
-
-export type GeolocationCoordinates = {
-  lat: number;
-  lng: number;
-};
+import type { GeolocationCoordinates, UnitStatus } from '@/app/page';
 
 type SignInStep = 'idle' | 'methodChoice' | 'locating' | 'scanning' | 'pinEntry' | 'biometric' | 'recording' | 'success' | 'error' | 'locationError';
 type SignInError = {
@@ -85,17 +81,33 @@ function JoinUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
 
 function UnitCard({ 
   unit, 
+  status,
   onSignIn, 
-  activeSessionId 
 }: { 
   unit: UnitWithAttendance, 
+  status: UnitStatus,
   onSignIn: (unitId: string) => void,
-  activeSessionId: string | null,
 }) {
   const totalSessions = unit.sessionHistory?.length || 0;
   const percentage = totalSessions > 0 ? Math.round((unit.attendedSessionsCount / totalSessions) * 100) : 0;
   const isAtRisk = percentage < unit.attendanceThreshold;
-  const isSessionActiveForThisUnit = activeSessionId ? unit.sessionHistory?.includes(activeSessionId) : false;
+
+  const getButtonContent = () => {
+    switch (status) {
+        case 'active':
+            return (
+                <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Sign In Now
+                </>
+            );
+        case 'recently_closed':
+            return 'Session Closed';
+        case 'inactive':
+        default:
+            return 'Session Inactive';
+    }
+  };
 
   return (
     <Card className="flex flex-col">
@@ -117,12 +129,11 @@ function UnitCard({
       </CardContent>
       <CardFooter>
         <Button 
-          className={`w-full ${isSessionActiveForThisUnit ? 'animate-pulse' : ''}`}
-          disabled={!isSessionActiveForThisUnit}
+          className={`w-full ${status === 'active' ? 'animate-pulse' : ''}`}
+          disabled={status !== 'active'}
           onClick={() => onSignIn(unit.id)}
         >
-          {isSessionActiveForThisUnit ? <Sparkles className="mr-2 h-4 w-4" /> : null}
-          {isSessionActiveForThisUnit ? "Sign In Now" : "Session Inactive"}
+          {getButtonContent()}
         </Button>
       </CardFooter>
     </Card>
@@ -132,16 +143,14 @@ function UnitCard({
 
 export function StudentView({
   units,
+  unitStatuses,
   onLocationSignIn,
   onQrSignIn,
-  activeSessionUnitId,
-  activeSessionId,
 }: {
   units: UnitWithAttendance[];
-  onLocationSignIn: (studentId: string, location: GeolocationCoordinates, deviceId: string) => { student: Student | null, distance?: number };
-  onQrSignIn: (studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Student | null;
-  activeSessionUnitId: string | null;
-  activeSessionId: string | null;
+  unitStatuses: Record<string, UnitStatus>;
+  onLocationSignIn: (unitId: string, studentId: string, location: GeolocationCoordinates, deviceId: string) => { student: Student | null, distance?: number };
+  onQrSignIn: (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Student | null;
 }) {
   const { user } = useUser();
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
@@ -154,6 +163,8 @@ export function StudentView({
   const qrReaderId = "qr-reader";
   const [isJoinUnitOpen, setIsJoinUnitOpen] = useState(false);
   const [isSignInDialogOpen, setIsSignInDialogOpen] = useState(false);
+  const [signingInUnitId, setSigningInUnitId] = useState<string | null>(null);
+
 
   useEffect(() => {
     setDeviceId(generateSimpleId());
@@ -209,18 +220,20 @@ export function StudentView({
     setPin('');
     setSignInError(null);
     setQrData(null);
+    setSigningInUnitId(null);
   };
   
-  const startSignIn = () => {
+  const startSignIn = (unitId: string) => {
+    setSigningInUnitId(unitId);
     setIsSignInDialogOpen(true);
     setSignInStep('methodChoice');
   }
 
   const recordQrAttendance = () => {
-    if (!user || !qrData) return;
+    if (!user || !qrData || !signingInUnitId) return;
     setSignInStep('recording');
     setTimeout(() => {
-      const updatedStudent = onQrSignIn(user.uid, deviceId!, pin, qrData.sessionId);
+      const updatedStudent = onQrSignIn(signingInUnitId, user.uid, deviceId!, pin, qrData.sessionId);
       if (updatedStudent) {
         setSignInStep('success');
       } else {
@@ -232,7 +245,7 @@ export function StudentView({
   };
   
   const handleLocationAuth = () => {
-    if (!user || !activeSessionUnitId) return;
+    if (!user || !signingInUnitId) return;
     setSignInStep('locating');
     if (!navigator.geolocation) {
       setSignInError({ title: "Location Not Supported", description: "Your browser does not support geolocation. Please use the QR code method." });
@@ -249,7 +262,7 @@ export function StudentView({
         setSignInStep('recording');
         
         setTimeout(() => {
-          const { student: updatedStudent, distance } = onLocationSignIn(user.uid, studentLocation, deviceId!);
+          const { student: updatedStudent, distance } = onLocationSignIn(signingInUnitId, user.uid, studentLocation, deviceId!);
           if (updatedStudent) {
             setSignInStep('success');
 
@@ -416,7 +429,12 @@ export function StudentView({
           <h2 className="text-2xl font-bold font-headline mb-4">My Enrolled Units</h2>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {units.map(unit => (
-              <UnitCard key={unit.id} unit={unit} onSignIn={startSignIn} activeSessionId={activeSessionId} />
+              <UnitCard 
+                key={unit.id} 
+                unit={unit} 
+                status={unitStatuses[unit.id] || 'inactive'}
+                onSignIn={startSignIn}
+              />
             ))}
           </div>
         </div>

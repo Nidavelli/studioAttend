@@ -32,6 +32,8 @@ export type SignedInStudent = {
   isDuplicateDevice: boolean;
 };
 
+export type UnitStatus = 'active' | 'recently_closed' | 'inactive';
+
 async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise<Student[]> {
   if (studentIds.length === 0) return [];
   const students: Student[] = [];
@@ -67,6 +69,7 @@ export default function Home() {
   const [studentUnits, setStudentUnits] = useState<UnitWithAttendance[]>([]);
   const [studentsInUnit, setStudentsInUnit] = useState<Student[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [unitStatuses, setUnitStatuses] = useState<Record<string, UnitStatus>>({});
 
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -92,13 +95,13 @@ export default function Home() {
         const unitRef = doc(firestore, 'units', selectedUnitId);
         await updateDoc(unitRef, {
             activeSessionId: null,
-            sessionEndTime: null,
+            sessionEndTime: null, // Keep endTime to detect 'recently_closed'
         });
     }
     setSessionActive(false);
     setSignedInStudents([]);
     setUsedDeviceIds(new Set());
-    setSessionEndTime(null);
+    // Do not nullify sessionEndTime here
     setSessionPin('');
     setActiveSessionId(null);
     setLecturerLocation(null);
@@ -157,17 +160,12 @@ export default function Home() {
     fetchRole();
   }, [user, userLoading, router, firestore, toast]);
 
-  // Effect to fetch units based on role
+  // Effect for lecturers to fetch units
   useEffect(() => {
-    if (!role || !user) return;
+    if (role !== 'lecturer' || !user) return;
     
     setIsDataLoading(true);
-    let q;
-    if (role === 'lecturer') {
-        q = query(collection(firestore, "units"), where("lecturerId", "==", user.uid));
-    } else { // student
-        q = query(collection(firestore, "units"), where("enrolledStudents", "array-contains", user.uid));
-    }
+    let q = query(collection(firestore, "units"), where("lecturerId", "==", user.uid));
     
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const fetchedUnits: Unit[] = [];
@@ -175,42 +173,12 @@ export default function Home() {
             fetchedUnits.push({ id: doc.id, ...doc.data() } as Unit);
         });
         
-        if (role === 'lecturer') {
-            setUnits(fetchedUnits);
-            if (fetchedUnits.length > 0 && !selectedUnitId) {
-                setSelectedUnitId(fetchedUnits[0].id);
-            } else if (fetchedUnits.length === 0) {
-                setSelectedUnitId(null);
-            }
-        } else { // student
-            const activeUnit = fetchedUnits.find(u => u.activeSessionId);
-            if (activeUnit) {
-              setSelectedUnitId(activeUnit.id);
-              setActiveSessionId(activeUnit.activeSessionId);
-            } else {
-              setSelectedUnitId(null);
-              setActiveSessionId(null);
-            }
-
-            const fetchStudentAttendance = async () => {
-                const unitsWithAttendance: UnitWithAttendance[] = await Promise.all(
-                    fetchedUnits.map(async (unit) => {
-                        const attendanceQuery = query(
-                            collection(firestore, `units/${unit.id}/attendance`),
-                            where("studentId", "==", user.uid)
-                        );
-                        const attendanceSnapshot = await getDocs(attendanceQuery);
-                        return {
-                            ...unit,
-                            attendedSessionsCount: attendanceSnapshot.size,
-                        };
-                    })
-                );
-                setStudentUnits(unitsWithAttendance);
-            };
-            fetchStudentAttendance();
+        setUnits(fetchedUnits);
+        if (fetchedUnits.length > 0 && !selectedUnitId) {
+            setSelectedUnitId(fetchedUnits[0].id);
+        } else if (fetchedUnits.length === 0) {
+            setSelectedUnitId(null);
         }
-
         setIsDataLoading(false);
     }, (error) => {
         if (auth.currentUser) {
@@ -221,7 +189,77 @@ export default function Home() {
     });
 
     return () => unsubscribe();
+  }, [role, user, firestore, toast, auth, selectedUnitId]);
+
+  // Effect for students to fetch units
+  useEffect(() => {
+      if (role !== 'student' || !user) return;
+      setIsDataLoading(true);
+      const q = query(collection(firestore, "units"), where("enrolledStudents", "array-contains", user.uid));
+      
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+          const fetchedUnits: Unit[] = [];
+          querySnapshot.forEach((doc) => {
+              fetchedUnits.push({ id: doc.id, ...doc.data() } as Unit);
+          });
+  
+          const fetchStudentAttendance = async () => {
+              const unitsWithAttendance: UnitWithAttendance[] = await Promise.all(
+                  fetchedUnits.map(async (unit) => {
+                      const attendanceQuery = query(
+                          collection(firestore, `units/${unit.id}/attendance`),
+                          where("studentId", "==", user.uid)
+                      );
+                      const attendanceSnapshot = await getDocs(attendanceQuery);
+                      return {
+                          ...unit,
+                          attendedSessionsCount: attendanceSnapshot.size,
+                      };
+                  })
+              );
+              setStudentUnits(unitsWithAttendance);
+          };
+          fetchStudentAttendance();
+          setIsDataLoading(false);
+      }, (error) => {
+          if (auth.currentUser) {
+              console.error("Error fetching student units:", error);
+              toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch your units.' });
+          }
+          setIsDataLoading(false);
+      });
+  
+      return () => unsubscribe();
   }, [role, user, firestore, toast, auth]);
+
+  // Effect to manage unit statuses for students over time
+  useEffect(() => {
+      if (role !== 'student') return;
+  
+      const calculateStatuses = () => {
+          const now = new Date();
+          const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+          const newStatuses: Record<string, UnitStatus> = {};
+          
+          studentUnits.forEach(unit => {
+              const endTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
+  
+              if (unit.activeSessionId && endTime && endTime > now) {
+                  newStatuses[unit.id] = 'active';
+              } else if (!unit.activeSessionId && endTime && endTime > fiveMinutesAgo && endTime < now) {
+                  newStatuses[unit.id] = 'recently_closed';
+              } else {
+                  newStatuses[unit.id] = 'inactive';
+              }
+          });
+          setUnitStatuses(newStatuses);
+      };
+  
+      calculateStatuses();
+      const intervalId = setInterval(calculateStatuses, 15000);
+  
+      return () => clearInterval(intervalId);
+  }, [studentUnits, role]);
 
   // Effect for lecturers to fetch students and attendance records for the selected unit
   useEffect(() => {
@@ -269,15 +307,15 @@ export default function Home() {
                     setSessionEndTime(endTime);
                 } else {
                     // Clean up expired session from DB
-                    const unitRef = doc(firestore, 'units', selectedUnit.id);
-                    updateDoc(unitRef, {
-                        activeSessionId: null,
-                        sessionEndTime: null
-                    });
+                    endSession();
                 }
+            } else {
+              setSessionActive(false);
+              setActiveSessionId(null);
+              setSessionEndTime(null);
             }
         }
-    }, [selectedUnit, role, firestore]);
+    }, [selectedUnit, role, endSession]);
     
   const handleUnitChange = (unitId: string) => {
     if (sessionActive) {
@@ -287,13 +325,14 @@ export default function Home() {
     setSelectedUnitId(unitId);
   };
 
-  const recordSuccessfulSignIn = useCallback(async (studentId: string, signInMethod: 'location' | 'qr_code' | 'manual', deviceId?: string) => {
-    if (!activeSessionId || !selectedUnitId) return null;
-
-    const attendanceColRef = collection(firestore, `units/${selectedUnitId}/attendance`);
+  const recordSuccessfulSignIn = useCallback(async (unitId: string, studentId: string, signInMethod: 'location' | 'qr_code' | 'manual', deviceId?: string) => {
+    const unit = studentUnits.find(u => u.id === unitId) || units.find(u => u.id === unitId);
+    if (!unit || !unit.activeSessionId) return null;
     
-    // Prevent duplicate sign-ins for the same session
-    const dupeQuery = query(attendanceColRef, where("studentId", "==", studentId), where("sessionId", "==", activeSessionId));
+    const sessionId = unit.activeSessionId;
+    const attendanceColRef = collection(firestore, `units/${unitId}/attendance`);
+    
+    const dupeQuery = query(attendanceColRef, where("studentId", "==", studentId), where("sessionId", "==", sessionId));
     const dupeSnapshot = await getDocs(dupeQuery);
     if (!dupeSnapshot.empty) {
         toast({ variant: "destructive", title: "Already Signed In", description: "You have already signed in for this session." });
@@ -301,68 +340,80 @@ export default function Home() {
     }
 
     const student = studentsInUnit.find((s) => s.uid === studentId);
-    if (!student) return null;
+    if (!student && role !== 'student') return null; // Students won't have studentsInUnit populated
 
-    // Create a new attendance record
     await addDoc(attendanceColRef, {
         studentId: studentId,
-        sessionId: activeSessionId,
+        sessionId: sessionId,
         timestamp: serverTimestamp(),
         signInMethod: signInMethod,
     });
 
-    // Device tracking only for student-initiated sign-ins
-    let isDuplicateDevice = false;
-    if (deviceId) {
-        isDuplicateDevice = usedDeviceIds.has(deviceId);
-        setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
-    }
+    if (role === 'lecturer') {
+      let isDuplicateDevice = false;
+      if (deviceId) {
+          isDuplicateDevice = usedDeviceIds.has(deviceId);
+          setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
+      }
 
-    setSignedInStudents((prev) => [{
-      id: student.uid,
-      name: student.name,
-      avatarId: student.avatarId,
-      signedInAt: new Date().toLocaleTimeString(),
-      isDuplicateDevice: isDuplicateDevice,
-    }, ...prev]);
+      setSignedInStudents((prev) => [{
+        id: student!.uid,
+        name: student!.name,
+        avatarId: student!.avatarId,
+        signedInAt: new Date().toLocaleTimeString(),
+        isDuplicateDevice: isDuplicateDevice,
+      }, ...prev]);
     
-    toast({ title: "Sign-In Successful!", description: `${student.name}'s attendance for ${selectedUnit?.name} has been recorded.` });
+      toast({ title: "Sign-In Successful!", description: `${student!.name}'s attendance for ${unit.name} has been recorded.` });
+    }
+    
     return student;
-  }, [activeSessionId, selectedUnitId, firestore, studentsInUnit, usedDeviceIds, toast, selectedUnit]);
+  }, [firestore, studentsInUnit, usedDeviceIds, toast, studentUnits, units, role]);
 
-  const handleQrSignIn = (studentId: string, deviceId: string, pin: string, sessionIdFromQr: string): Student | null => {
+  const handleQrSignIn = (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string): Student | null => {
+    const unit = studentUnits.find(u => u.id === unitId);
+    if (!unit) return null;
+    
+    const sessionEndTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
+
     if (sessionEndTime && new Date() > sessionEndTime) {
       toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
-      setSessionActive(false);
       return null;
     }
     if (pin !== sessionPin) {
       toast({ variant: 'destructive', title: 'Incorrect PIN', description: 'The PIN is incorrect or has expired.' });
       return null;
     }
-    if (sessionIdFromQr !== activeSessionId) {
+    if (sessionIdFromQr !== unit.activeSessionId) {
         toast({ variant: 'destructive', title: 'Invalid Session', description: 'This QR code is for a different session.' });
         return null;
     }
-    recordSuccessfulSignIn(studentId, 'qr_code', deviceId);
+    recordSuccessfulSignIn(unitId, studentId, 'qr_code', deviceId);
     return null;
   };
   
-  const handleLocationSignIn = (studentId: string, studentLocation: GeolocationCoordinates, deviceId: string): { student: Student | null; distance?: number } => {
+  const handleLocationSignIn = (unitId: string, studentId: string, studentLocation: GeolocationCoordinates, deviceId: string): { student: Student | null; distance?: number } => {
+    const unit = studentUnits.find(u => u.id === unitId);
+    if (!unit) return { student: null };
+    
+    const sessionEndTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
     if (sessionEndTime && new Date() > sessionEndTime) {
       toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
-      setSessionActive(false);
       return { student: null };
     }
-    if (!lecturerLocation) {
+
+    const activeLecturerUnit = units.find(u => u.id === unitId);
+    const locationForCheck = lecturerLocation || (activeLecturerUnit as any)?.lecturerLocation;
+
+    if (!locationForCheck) {
         toast({ variant: "destructive", title: "Location Not Set", description: "The lecturer has not set a location." });
         return { student: null };
     }
-    const distance = haversineDistance(studentLocation, lecturerLocation);
+    const distance = haversineDistance(studentLocation, locationForCheck);
     if (distance > radius) {
         return { student: null, distance: Math.round(distance) };
     }
-    recordSuccessfulSignIn(studentId, 'location', deviceId);
+    recordSuccessfulSignIn(unitId, studentId, 'location', deviceId);
     return { student: null };
   };
 
@@ -413,7 +464,8 @@ export default function Home() {
       
       await updateDoc(unitRef, {
           activeSessionId: newSessionId,
-          sessionEndTime: Timestamp.fromDate(endTime)
+          sessionEndTime: Timestamp.fromDate(endTime),
+          lecturerLocation: lecturerLocation // Persist location for students
       });
 
       setActiveSessionId(newSessionId);
@@ -423,7 +475,7 @@ export default function Home() {
   };
 
   const renderContent = () => {
-    if (userLoading || isRoleLoading || (role && isDataLoading && (role === 'lecturer' ? !selectedUnit : studentUnits.length === 0 && units.length === 0))) {
+    if (userLoading || isRoleLoading || (role && isDataLoading)) {
         return (
             <div className="w-full max-w-7xl mx-auto space-y-6 mt-8">
                 <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
@@ -479,10 +531,9 @@ export default function Home() {
           {role === 'student' && (
             <StudentView
               units={studentUnits}
+              unitStatuses={unitStatuses}
               onLocationSignIn={handleLocationSignIn}
               onQrSignIn={handleQrSignIn}
-              activeSessionUnitId={selectedUnitId}
-              activeSessionId={activeSessionId}
             />
           )}
 
@@ -519,5 +570,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
