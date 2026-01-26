@@ -1,9 +1,10 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase/auth/use-user';
-import { useFirestore } from '@/firebase/provider';
+import { useAuth, useFirestore } from '@/firebase/provider';
 import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
 import { Header } from '@/components/header';
 import { StudentView } from '@/components/student-view';
@@ -55,6 +56,7 @@ async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise
 export default function Home() {
   const { user, loading: userLoading } = useUser();
   const firestore = useFirestore();
+  const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -84,6 +86,23 @@ export default function Home() {
 
   const [signedInStudents, setSignedInStudents] = useState<SignedInStudent[]>([]);
   const [usedDeviceIds, setUsedDeviceIds] = useState<Set<string>>(new Set());
+
+  const endSession = useCallback(async () => {
+    if (selectedUnitId) {
+        const unitRef = doc(firestore, 'units', selectedUnitId);
+        await updateDoc(unitRef, {
+            activeSessionId: null,
+            sessionEndTime: null,
+        });
+    }
+    setSessionActive(false);
+    setSignedInStudents([]);
+    setUsedDeviceIds(new Set());
+    setSessionEndTime(null);
+    setSessionPin('');
+    setActiveSessionId(null);
+    setLecturerLocation(null);
+  }, [selectedUnitId, firestore]);
 
   // Effect to fetch user role
   useEffect(() => {
@@ -162,13 +181,15 @@ export default function Home() {
 
         setIsDataLoading(false);
     }, (error) => {
-        console.error("Error fetching units:", error);
-        toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch units.' });
+        if (auth.currentUser) {
+          console.error("Error fetching units:", error);
+          toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch units.' });
+        }
         setIsDataLoading(false);
     });
 
     return () => unsubscribe();
-  }, [role, user, firestore, toast, selectedUnitId]);
+  }, [role, user, firestore, toast, selectedUnitId, auth]);
 
   // Effect for lecturers to fetch students and attendance records for the selected unit
   useEffect(() => {
@@ -189,8 +210,10 @@ export default function Home() {
             snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data()} as AttendanceRecord));
             setAttendanceRecords(records);
         }, (error) => {
-            console.error("Error fetching attendance records:", error);
-            toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
+            if (auth.currentUser) {
+              console.error("Error fetching attendance records:", error);
+              toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
+            }
         });
         
         setIsDataLoading(false);
@@ -201,7 +224,7 @@ export default function Home() {
     return () => {
       unsubscribePromise.then(unsubscribe => unsubscribe && unsubscribe());
     }
-  }, [selectedUnit, firestore, role, toast]);
+  }, [selectedUnit, firestore, role, toast, auth]);
 
     // Effect to restore session state for lecturer
     useEffect(() => {
@@ -224,23 +247,6 @@ export default function Home() {
         }
     }, [selectedUnit, role, firestore]);
     
-  const endSession = useCallback(async () => {
-    if (selectedUnitId) {
-        const unitRef = doc(firestore, 'units', selectedUnitId);
-        await updateDoc(unitRef, {
-            activeSessionId: null,
-            sessionEndTime: null,
-        });
-    }
-    setSessionActive(false);
-    setSignedInStudents([]);
-    setUsedDeviceIds(new Set());
-    setSessionEndTime(null);
-    setSessionPin('');
-    setActiveSessionId(null);
-    setLecturerLocation(null);
-  }, [selectedUnitId, firestore]);
-
   // Session timer and PIN generation logic
   useEffect(() => {
     let timerInterval: NodeJS.Timeout;
