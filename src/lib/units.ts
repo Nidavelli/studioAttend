@@ -73,7 +73,6 @@ export async function joinUnit(
     return { success: true };
   } catch (error: any)
   {
-    console.error("Error joining unit:", error);
     return { success: false, error: error.message || "Failed to join unit." };
   }
 }
