@@ -243,7 +243,7 @@ export function LecturerDashboard({
   if (!unit) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
-        <Card className="max-w-lg">
+        <Card className="max-w-lg w-full">
           <CardHeader>
             <CardTitle>Welcome, Lecturer!</CardTitle>
             <CardDescription>You haven't created any units yet. Create a unit to get started.</CardDescription>
@@ -272,7 +272,7 @@ export function LecturerDashboard({
   const qrCodeValue = isSessionActive ? JSON.stringify({ unitId: unit.id, sessionId: activeSessionId }) : '';
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
+    <div className="grid gap-6 grid-cols-1 lg:grid-cols-3 mt-4 md:mt-8">
       <Card className="lg:col-span-1">
         <CardHeader>
           <CardTitle className="font-headline">Session Control</CardTitle>
@@ -376,11 +376,11 @@ export function LecturerDashboard({
            {isSessionActive ? (
             <div className="flex flex-col md:flex-row items-center justify-center gap-6">
                 <div className="bg-white p-4 rounded-lg">
-                    <QRCode value={qrCodeValue} size={160} />
+                    <QRCode value={qrCodeValue} size={144} />
                 </div>
-                <div className="flex flex-col items-center gap-2">
+                <div className="flex flex-col items-center gap-2 text-center">
                     <p className="text-muted-foreground text-sm">CURRENT PIN</p>
-                    <p className="text-6xl font-mono font-bold tracking-widest text-primary animate-pulse">{sessionPin}</p>
+                    <p className="text-4xl sm:text-6xl font-mono font-bold tracking-widest text-primary animate-pulse">{sessionPin}</p>
                     <p className="text-muted-foreground text-xs mt-2">PIN refreshes every 15 seconds</p>
                 </div>
             </div>
@@ -393,7 +393,7 @@ export function LecturerDashboard({
         </CardContent>
       </Card>
 
-      <Card className="md:col-span-2 lg:col-span-3">
+      <Card className="lg:col-span-3">
         <CardHeader>
           <CardTitle className="font-headline">Live Attendance Ledger</CardTitle>
           <CardDescription>Students who have signed in for the current session.</CardDescription>
@@ -451,7 +451,7 @@ export function LecturerDashboard({
         </CardContent>
       </Card>
 
-      <Card className="md:col-span-2 lg:col-span-3">
+      <Card className="lg:col-span-3">
         <CardHeader>
           <CardTitle className="font-headline">Attendance Analytics</CardTitle>
           <CardDescription>Overall attendance records for all students in this unit.</CardDescription>
@@ -461,7 +461,7 @@ export function LecturerDashboard({
         </CardContent>
       </Card>
 
-      <Card className="md:col-span-2 lg:col-span-3">
+      <Card className="lg:col-span-3">
         <CardHeader>
           <CardTitle className="font-headline">Manual Attendance Grid</CardTitle>
           <CardDescription>Manually mark a student as present for a specific session. This is a permanent action.</CardDescription>
