@@ -35,17 +35,27 @@ service cloud.firestore {
 
       // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
-        // A user can read their own attendance records. A lecturer can read all records for their unit.
-        allow read: if (request.auth != null && resource.data.studentId == request.auth.uid) ||
+        // GET rule: A user can get their own attendance record. A lecturer can get any record in their unit.
+        allow get: if (request.auth != null && resource.data.studentId == request.auth.uid) ||
                       (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' &&
                        get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid);
 
-        // A student can create an attendance record for themselves if they are enrolled in the unit
-        // and the session is valid. No one can sign in for anyone else.
-        allow create: if request.auth != null &&
-                        request.resource.data.studentId == request.auth.uid &&
+        // LIST rule: A lecturer can list all records for their unit.
+        // A student must use a filtered query (e.g., where("studentId", "==", uid)) which is validated by the `get` rule.
+        allow list: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' &&
+                       get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
+
+        // CREATE rule: A student can create an attendance record for themselves if they are enrolled in the unit
+        // and the session is valid. A lecturer can create a record on behalf of any student.
+        allow create: if (
+                        request.auth != null &&
+                        request.resource.data.studentId == request.auth.uid && // Student signing in for themselves
                         request.auth.uid in get(/databases/$(database)/documents/units/$(unitId)).data.enrolledStudents &&
-                        request.resource.data.sessionId in get(/databases/$(database)/documents/units/$(unitId)).data.sessionHistory;
+                        request.resource.data.sessionId in get(/databases/$(database)/documents/units/$(unitId)).data.sessionHistory
+                      ) || (
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' && // Lecturer manual sign-in
+                        get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid
+                      );
         
         // No one can update or delete attendance records to ensure an immutable log.
         allow update, delete: if false;

@@ -175,6 +175,7 @@ export function LecturerDashboard({
   setLecturerLocation,
   radius,
   setRadius,
+  onManualSignIn,
 }: {
   students: Student[];
   unit: Unit;
@@ -191,6 +192,7 @@ export function LecturerDashboard({
   setLecturerLocation: (location: GeolocationCoordinates | null) => void;
   radius: number;
   setRadius: (radius: number) => void;
+  onManualSignIn: (studentId: string, sessionId: string) => void;
 }) {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isCreateUnitOpen, setIsCreateUnitOpen] = useState(false);
@@ -461,11 +463,16 @@ export function LecturerDashboard({
 
       <Card className="md:col-span-2 lg:col-span-3">
         <CardHeader>
-          <CardTitle className="font-headline">Printable Attendance Report</CardTitle>
-          <CardDescription>Semester-wide attendance sheet. This is a display-only view.</CardDescription>
+          <CardTitle className="font-headline">Manual Attendance Grid</CardTitle>
+          <CardDescription>Manually mark a student as present for a specific session. This is a permanent action.</CardDescription>
         </CardHeader>
         <CardContent>
-          <AttendanceReport students={students} unit={unit} attendanceRecords={attendanceRecords} />
+          <AttendanceReport 
+            students={students} 
+            unit={unit} 
+            attendanceRecords={attendanceRecords}
+            onManualSignIn={onManualSignIn}
+          />
         </CardContent>
       </Card>
     </div>

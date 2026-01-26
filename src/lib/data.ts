@@ -21,6 +21,8 @@ export type Unit = {
   attendanceThreshold: number;
   enrolledStudents: string[]; // Array of student UIDs
   sessionHistory: string[]; // Array of session IDs
+  activeSessionId?: string | null;
+  sessionEndTime?: any | null; // Firestore Timestamp
 };
 
 // Represents a single, immutable attendance record for a student in a session.
@@ -29,7 +31,7 @@ export type AttendanceRecord = {
   studentId: string;
   sessionId: string;
   timestamp: any; // Firestore Timestamp
-  signInMethod: 'location' | 'qr_code';
+  signInMethod: 'location' | 'qr_code' | 'manual';
 };
 
 // A helper type for the student dashboard to combine unit data

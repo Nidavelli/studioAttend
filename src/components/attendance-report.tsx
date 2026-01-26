@@ -4,12 +4,21 @@
 import React from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Printer } from 'lucide-react';
+import { Printer, Check, X } from 'lucide-react';
 import type { Student, Unit, AttendanceRecord } from '@/lib/data';
+import { cn } from '@/lib/utils';
 
-// This component is now deprecated and will not support manual toggling
-// as attendance is now an immutable log. It serves as a display-only report.
-export function AttendanceReport({ students, unit, attendanceRecords }: { students: Student[]; unit: Unit; attendanceRecords: AttendanceRecord[] }) {
+export function AttendanceReport({ 
+  students, 
+  unit, 
+  attendanceRecords,
+  onManualSignIn
+}: { 
+  students: Student[]; 
+  unit: Unit; 
+  attendanceRecords: AttendanceRecord[];
+  onManualSignIn: (studentId: string, sessionId: string) => void;
+}) {
   
   const handlePrint = () => {
     window.print();
@@ -53,7 +62,19 @@ export function AttendanceReport({ students, unit, attendanceRecords }: { studen
                         key={`${student.uid}-session-${sessionId}`} 
                         className="text-center"
                       >
-                        {isPresent ? 'X' : ''}
+                        <Button
+                          variant={isPresent ? "ghost" : "outline"}
+                          size="icon"
+                          className={cn(
+                            "h-8 w-8",
+                            isPresent ? "cursor-default text-green-500" : "text-muted-foreground"
+                          )}
+                          disabled={isPresent}
+                          onClick={() => onManualSignIn(student.uid, sessionId)}
+                          aria-label={`Mark ${student.name} as present for session ${sessionId}`}
+                        >
+                          {isPresent ? <Check /> : <X />}
+                        </Button>
                       </TableCell>
                     );
                   })}

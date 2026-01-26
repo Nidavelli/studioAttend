@@ -1,11 +1,10 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase/auth/use-user';
 import { useFirestore } from '@/firebase/provider';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
 import { Header } from '@/components/header';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
@@ -142,7 +141,6 @@ export default function Home() {
                 setSelectedUnitId(null);
             }
         } else { // student
-            // For students, fetch their attendance count for each unit
             const fetchStudentAttendance = async () => {
                 const unitsWithAttendance: UnitWithAttendance[] = await Promise.all(
                     fetchedUnits.map(async (unit) => {
@@ -182,16 +180,17 @@ export default function Home() {
     
     const fetchUnitData = async () => {
         setIsDataLoading(true);
-        // Fetch students
         const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents);
         setStudentsInUnit(studentData);
         
-        // Fetch attendance records for the unit
         const attendanceQuery = collection(firestore, `units/${selectedUnit.id}/attendance`);
         const unsubscribe = onSnapshot(attendanceQuery, (snapshot) => {
             const records: AttendanceRecord[] = [];
             snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data()} as AttendanceRecord));
             setAttendanceRecords(records);
+        }, (error) => {
+            console.error("Error fetching attendance records:", error);
+            toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
         });
         
         setIsDataLoading(false);
@@ -202,7 +201,45 @@ export default function Home() {
     return () => {
       unsubscribePromise.then(unsubscribe => unsubscribe && unsubscribe());
     }
-  }, [selectedUnit, firestore, role]);
+  }, [selectedUnit, firestore, role, toast]);
+
+    // Effect to restore session state for lecturer
+    useEffect(() => {
+        if (role === 'lecturer' && selectedUnit) {
+            if (selectedUnit.activeSessionId && selectedUnit.sessionEndTime) {
+                const endTime = (selectedUnit.sessionEndTime as Timestamp).toDate();
+                if (new Date() < endTime) {
+                    setSessionActive(true);
+                    setActiveSessionId(selectedUnit.activeSessionId);
+                    setSessionEndTime(endTime);
+                } else {
+                    // Clean up expired session from DB
+                    const unitRef = doc(firestore, 'units', selectedUnit.id);
+                    updateDoc(unitRef, {
+                        activeSessionId: null,
+                        sessionEndTime: null
+                    });
+                }
+            }
+        }
+    }, [selectedUnit, role, firestore]);
+    
+  const endSession = useCallback(async () => {
+    if (selectedUnitId) {
+        const unitRef = doc(firestore, 'units', selectedUnitId);
+        await updateDoc(unitRef, {
+            activeSessionId: null,
+            sessionEndTime: null,
+        });
+    }
+    setSessionActive(false);
+    setSignedInStudents([]);
+    setUsedDeviceIds(new Set());
+    setSessionEndTime(null);
+    setSessionPin('');
+    setActiveSessionId(null);
+    setLecturerLocation(null);
+  }, [selectedUnitId, firestore]);
 
   // Session timer and PIN generation logic
   useEffect(() => {
@@ -225,17 +262,7 @@ export default function Home() {
       clearInterval(timerInterval);
       clearInterval(pinInterval);
     };
-  }, [sessionActive, sessionEndTime, toast]);
-
-  const endSession = useCallback(() => {
-    setSessionActive(false);
-    setSignedInStudents([]);
-    setUsedDeviceIds(new Set());
-    setSessionEndTime(null);
-    setSessionPin('');
-    setActiveSessionId(null);
-    setLecturerLocation(null);
-  }, []);
+  }, [sessionActive, sessionEndTime, toast, endSession]);
 
   const handleUnitChange = (unitId: string) => {
     if (sessionActive) {
@@ -245,7 +272,7 @@ export default function Home() {
     setSelectedUnitId(unitId);
   };
 
-  const recordSuccessfulSignIn = useCallback(async (studentId: string, deviceId: string, method: 'location' | 'qr_code') => {
+  const recordSuccessfulSignIn = useCallback(async (studentId: string, signInMethod: 'location' | 'qr_code' | 'manual', deviceId?: string) => {
     if (!activeSessionId || !selectedUnitId) return null;
 
     const attendanceColRef = collection(firestore, `units/${selectedUnitId}/attendance`);
@@ -266,10 +293,16 @@ export default function Home() {
         studentId: studentId,
         sessionId: activeSessionId,
         timestamp: serverTimestamp(),
-        signInMethod: method,
+        signInMethod: signInMethod,
     });
 
-    const isDuplicateDevice = usedDeviceIds.has(deviceId);
+    // Device tracking only for student-initiated sign-ins
+    let isDuplicateDevice = false;
+    if (deviceId) {
+        isDuplicateDevice = usedDeviceIds.has(deviceId);
+        setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
+    }
+
     setSignedInStudents((prev) => [{
       id: student.uid,
       name: student.name,
@@ -277,9 +310,8 @@ export default function Home() {
       signedInAt: new Date().toLocaleTimeString(),
       isDuplicateDevice: isDuplicateDevice,
     }, ...prev]);
-    setUsedDeviceIds((prev) => new Set(prev).add(deviceId));
     
-    toast({ title: "Sign-In Successful!", description: `Your attendance for ${selectedUnit?.name} has been recorded.` });
+    toast({ title: "Sign-In Successful!", description: `${student.name}'s attendance for ${selectedUnit?.name} has been recorded.` });
     return student;
   }, [activeSessionId, selectedUnitId, firestore, studentsInUnit, usedDeviceIds, toast, selectedUnit]);
 
@@ -297,9 +329,7 @@ export default function Home() {
         toast({ variant: 'destructive', title: 'Invalid Session', description: 'This QR code is for a different session.' });
         return null;
     }
-    recordSuccessfulSignIn(studentId, deviceId, 'qr_code');
-    // The actual student object return for the dialog is now handled by the state update triggering a re-render.
-    // We return null here as the immediate dialog is no longer the primary feedback.
+    recordSuccessfulSignIn(studentId, 'qr_code', deviceId);
     return null;
   };
   
@@ -317,19 +347,47 @@ export default function Home() {
     if (distance > radius) {
         return { student: null, distance: Math.round(distance) };
     }
-    recordSuccessfulSignIn(studentId, deviceId, 'location');
+    recordSuccessfulSignIn(studentId, 'location', deviceId);
     return { student: null };
   };
 
-  const toggleSession = async () => {
-    if (sessionActive) {
-      endSession();
-    } else {
-       if (role === 'lecturer' && !selectedUnitId) {
-        toast({ variant: "destructive", title: "Cannot Start Session", description: "Please select a unit first." });
+  const handleManualSignIn = async (studentId: string, sessionId: string) => {
+    if (!selectedUnitId) return;
+
+    const attendanceColRef = collection(firestore, `units/${selectedUnitId}/attendance`);
+    const dupeQuery = query(attendanceColRef, where("studentId", "==", studentId), where("sessionId", "==", sessionId));
+    const dupeSnapshot = await getDocs(dupeQuery);
+
+    if (!dupeSnapshot.empty) {
+        toast({ variant: "destructive", title: "Already Marked", description: "This student is already marked as present for this session." });
         return;
-      }
-       if (!lecturerLocation && role === 'lecturer') {
+    }
+    
+    const student = studentsInUnit.find((s) => s.uid === studentId);
+    if (!student) return;
+
+    await addDoc(attendanceColRef, {
+        studentId: studentId,
+        sessionId: sessionId,
+        timestamp: serverTimestamp(),
+        signInMethod: 'manual',
+    });
+
+    toast({ title: "Attendance Marked", description: `${student.name} has been manually marked as present.` });
+  };
+
+  const toggleSession = async () => {
+    if (!selectedUnitId) {
+      toast({ variant: "destructive", title: "Cannot Start Session", description: "Please select a unit first." });
+      return;
+    }
+
+    const unitRef = doc(firestore, 'units', selectedUnitId);
+
+    if (sessionActive) {
+      await endSession();
+    } else {
+       if (role === 'lecturer' && !lecturerLocation) {
         toast({ variant: "destructive", title: "Cannot Start Session", description: "Please set the session location." });
         return;
       }
@@ -337,6 +395,12 @@ export default function Home() {
       await addSessionToUnitHistory(selectedUnitId!, newSessionId);
 
       const endTime = new Date(new Date().getTime() + sessionDuration * 60000);
+      
+      await updateDoc(unitRef, {
+          activeSessionId: newSessionId,
+          sessionEndTime: Timestamp.fromDate(endTime)
+      });
+
       setActiveSessionId(newSessionId);
       setSessionEndTime(endTime);
       setSessionActive(true);
@@ -344,19 +408,19 @@ export default function Home() {
   };
 
   const renderContent = () => {
-    if (userLoading || isRoleLoading || (role && isDataLoading && (role === 'lecturer' || studentUnits.length > 0))) {
-      return (
-        <div className="w-full max-w-7xl mx-auto space-y-6 mt-8">
-            <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
-              <Skeleton className="h-8 w-64" />
-              <Skeleton className="h-10 w-full sm:w-64" />
+    if (userLoading || isRoleLoading || (role && isDataLoading && (role === 'lecturer' ? !selectedUnit : studentUnits.length === 0 && units.length === 0))) {
+        return (
+            <div className="w-full max-w-7xl mx-auto space-y-6 mt-8">
+                <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
+                  <Skeleton className="h-8 w-64" />
+                  <Skeleton className="h-10 w-full sm:w-64" />
+                </div>
+                <div className="space-y-4">
+                  <Skeleton className="h-10 w-full max-w-md mx-auto" />
+                  <Skeleton className="h-96 w-full" />
+                </div>
             </div>
-            <div className="space-y-4">
-              <Skeleton className="h-10 w-full max-w-md mx-auto" />
-              <Skeleton className="h-96 w-full" />
-            </div>
-        </div>
-      );
+        );
     }
 
     if (!role) {
@@ -424,6 +488,7 @@ export default function Home() {
               setLecturerLocation={setLecturerLocation}
               radius={radius}
               setRadius={setRadius}
+              onManualSignIn={handleManualSignIn}
             />
           )}
         </div>
