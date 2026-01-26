@@ -506,6 +506,14 @@ export function StudentView({
 
       <Dialog open={!!viewingAttendanceUnit} onOpenChange={(isOpen) => { if (!isOpen) setViewingAttendanceUnit(null); }}>
         <DialogContent className="max-w-3xl">
+          {viewingAttendanceUnit && (
+             <DialogHeader>
+                <DialogTitle>My Attendance for {viewingAttendanceUnit.name}</DialogTitle>
+                <DialogDescription>
+                    A record of your attendance for each session in this unit. Check marks indicate presence.
+                </DialogDescription>
+            </DialogHeader>
+          )}
           {isLoadingAttendance ? (
             <div className="space-y-4 p-8">
               <Skeleton className="h-8 w-3/4 mx-auto" />
