@@ -19,10 +19,10 @@ service cloud.firestore {
 
       // Lecturers can update their own units.
       // Students can ONLY update a unit to add themselves to the enrolledStudents list.
-      allow update: if 
+      allow update: if
         (
           // Condition for Lecturers: Allow full update if they own the unit.
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' &&
           resource.data.lecturerId == request.auth.uid
         ) || (
           // Condition for Students: Allow update only for self-enrollment.
@@ -32,8 +32,14 @@ service cloud.firestore {
           request.resource.data.code == resource.data.code &&
           request.resource.data.lecturerId == resource.data.lecturerId &&
           request.resource.data.attendanceThreshold == resource.data.attendanceThreshold &&
-          // This ensures that the only change to the enrolledStudents list is the addition of the requesting user's UID.
-          request.resource.data.enrolledStudents.toSet().difference(resource.data.enrolledStudents.toSet()).hasOnly([request.auth.uid])
+          request.resource.data.createdAt == resource.data.createdAt &&
+          // New logic for checking student enrollment:
+          // 1. The new list must be exactly one student larger.
+          request.resource.data.enrolledStudents.size() == resource.data.enrolledStudents.size() + 1 &&
+          // 2. The requesting student must be in the new list.
+          request.auth.uid in request.resource.data.enrolledStudents &&
+          // 3. All previously enrolled students must still be in the new list.
+          resource.data.enrolledStudents.toSet().isSubset(request.resource.data.enrolledStudents.toSet())
         );
     }
   }
