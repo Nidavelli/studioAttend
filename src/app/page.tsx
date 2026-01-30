@@ -231,9 +231,12 @@ export default function Home() {
                           where("studentId", "==", user.uid)
                       );
                       const attendanceSnapshot = await getDocs(attendanceQuery);
+                      const attendedSessionIds = new Set(
+                        attendanceSnapshot.docs.map(doc => doc.data().sessionId)
+                      );
                       return {
                           ...unit,
-                          attendedSessionsCount: attendanceSnapshot.size,
+                          attendedSessionsCount: attendedSessionIds.size,
                       };
                   })
               );
