@@ -305,7 +305,11 @@ export default function Home() {
         const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents);
         setStudentsInUnit(studentData);
         
-        const attendanceQuery = collection(firestore, `units/${selectedUnit.id}/attendance`);
+        const attendanceQuery = query(
+          collection(firestore, `units/${selectedUnit.id}/attendance`),
+          where("lecturerId", "==", user.uid)
+        );
+
         const unsubscribe = onSnapshot(attendanceQuery, (snapshot) => {
             const records: AttendanceRecord[] = [];
             snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data()} as AttendanceRecord));
