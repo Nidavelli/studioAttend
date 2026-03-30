@@ -22,8 +22,8 @@ service cloud.firestore {
       // Anyone authenticated can read unit information.
       allow read: if request.auth != null;
 
-      // Only lecturers can create new units.
-      allow create: if isLecturerAndOwner(unitId)
+      // Only lecturers can create new units, and they must be the owner.
+      allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer'
                     && request.resource.data.lecturerId == request.auth.uid;
 
       // Lecturers can update their own units.
@@ -65,7 +65,7 @@ service cloud.firestore {
             request.resource.data.sessionId in get(/databases/$(database)/documents/units/$(unitId)).data.sessionHistory
         );
         
-        // Keep records immutable from updates, but allow deletion by owner.
+        // Allow deletion of attendance records by the unit owner.
         allow update: if false;
         allow delete: if isLecturerAndOwner(unitId);
       }
