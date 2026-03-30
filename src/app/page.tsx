@@ -286,7 +286,7 @@ export default function Home() {
 
   // Effect for lecturers to fetch students and attendance records for the selected unit
   useEffect(() => {
-    if (role !== 'lecturer' || !selectedUnit) {
+    if (role !== 'lecturer' || !user || !selectedUnit) {
       setStudentsInUnit([]);
       setAttendanceRecords([]);
       return;
@@ -303,10 +303,8 @@ export default function Home() {
             snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data()} as AttendanceRecord));
             setAttendanceRecords(records);
         }, (error) => {
-            if (auth.currentUser) {
-              console.error("Error fetching attendance records:", error);
-              toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
-            }
+            console.error("Error fetching attendance records:", error);
+            toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
         });
         
         setIsDataLoading(false);
@@ -317,7 +315,7 @@ export default function Home() {
     return () => {
       unsubscribePromise.then(unsubscribe => unsubscribe && unsubscribe());
     }
-  }, [selectedUnit, firestore, role, toast, auth]);
+  }, [selectedUnit, firestore, role, user, toast]);
 
     // Effect to restore session state for lecturer
     useEffect(() => {
