@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase/auth/use-user';
 import { useAuth, useFirestore } from '@/firebase/provider';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, writeBatch, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, writeBatch, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { Header } from '@/components/header';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
@@ -515,16 +515,14 @@ export default function Home() {
         return;
       }
       const newSessionId = `${Date.now()}`;
-      // This is now handled in lib/units.ts, called from CreateUnitForm
-      // await addSessionToUnitHistory(selectedUnitId!, newSessionId);
-
       const endTime = new Date(new Date().getTime() + sessionDuration * 60000);
       
       await updateDoc(unitRef, {
           activeSessionId: newSessionId,
           sessionEndTime: Timestamp.fromDate(endTime),
-          lecturerLocation: lecturerLocation, // Persist location for students
-          sessionRadius: radius, // Persist radius for students
+          lecturerLocation: lecturerLocation,
+          sessionRadius: radius,
+          sessionHistory: arrayUnion(newSessionId),
       });
 
       setActiveSessionId(newSessionId);
