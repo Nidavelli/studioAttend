@@ -35,6 +35,7 @@ export type UnitStatus = 'active' | 'recently_closed' | 'inactive';
 async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise<Student[]> {
   if (studentIds.length === 0) return [];
   const students: Student[] = [];
+  // Firestore 'in' queries are limited to 30 elements
   for (let i = 0; i < studentIds.length; i += 30) {
     const batchIds = studentIds.slice(i, i + 30);
     const q = query(collection(firestore, 'users'), where('uid', 'in', batchIds));
@@ -158,13 +159,13 @@ export default function Home() {
         if (userDocSnap.exists()) {
           setRole(userDocSnap.data().role);
         } else {
-          toast({ variant: "destructive", title: "Account Error", description: "Your user role could not be found." });
-          setRole(null);
+          // This can happen for a split second after signup before the user doc is created
+          // Silently ignore for now, the listener will pick it up
         }
       } catch (error) {
         if (auth.currentUser) {
           console.error("Error fetching user role:", error);
-          setRole(null);
+          toast({ variant: "destructive", title: "Account Error", description: "Your user role could not be found." });
         }
       } finally {
         setIsRoleLoading(false);
@@ -192,8 +193,8 @@ export default function Home() {
             setSelectedUnitId(fetchedUnits[0].id);
         } else if (fetchedUnits.length === 0) {
             setSelectedUnitId(null);
+            setIsDataLoading(false); // No units, so we are done loading.
         }
-        setIsDataLoading(false);
     }, (error) => {
         if (auth.currentUser) {
           console.error("Error fetching units:", error);
@@ -241,9 +242,10 @@ export default function Home() {
                   })
               );
               setStudentUnits(unitsWithAttendance);
+              setIsDataLoading(false);
           };
           fetchStudentAttendance();
-          setIsDataLoading(false);
+          
       }, (error) => {
           if (auth.currentUser) {
               console.error("Error fetching student units:", error);
@@ -287,12 +289,11 @@ export default function Home() {
   // Effect for lecturers to fetch students and attendance records for the selected unit
   useEffect(() => {
     if (role !== 'lecturer' || !selectedUnit || !user) {
-      setStudentsInUnit([]);
-      setAttendanceRecords([]);
       return;
     };
     
     const fetchUnitData = async () => {
+        // This effect controls the loading state for the unit's details
         setIsDataLoading(true);
         const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents);
         setStudentsInUnit(studentData);
@@ -302,20 +303,28 @@ export default function Home() {
             const records: AttendanceRecord[] = [];
             snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data()} as AttendanceRecord));
             setAttendanceRecords(records);
+            setIsDataLoading(false); // Set loading to false on successful listener setup
         }, (error) => {
             console.error("Error fetching attendance records:", error);
-            toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
+             if (auth.currentUser) {
+                toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
+            }
+            setIsDataLoading(false); // Also set loading to false on error
         });
         
-        setIsDataLoading(false);
         return unsubscribe;
     }
     
     const unsubscribePromise = fetchUnitData();
+
     return () => {
-      unsubscribePromise.then(unsubscribe => unsubscribe && unsubscribe());
+      unsubscribePromise.then(unsubscribe => {
+        if (unsubscribe) {
+          unsubscribe();
+        }
+      });
     }
-  }, [selectedUnit, firestore, role, user, toast]);
+  }, [selectedUnit, firestore, role, user, toast, auth]);
 
     // Effect to restore session state for lecturer
     useEffect(() => {
@@ -545,7 +554,7 @@ export default function Home() {
   };
 
   const renderContent = () => {
-    if (userLoading || isRoleLoading || (role && isDataLoading)) {
+    if (userLoading || isRoleLoading || isDataLoading) {
         return (
             <div className="w-full max-w-7xl mx-auto space-y-6 mt-8">
                 <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
@@ -563,7 +572,7 @@ export default function Home() {
     if (!role) {
       return (
         <div className="text-center py-10">
-          <p className="text-lg text-destructive">Error: User role not found.</p>
+          <p className="text-lg text-destructive">Error: Could not determine user role.</p>
         </div>
       );
     }
