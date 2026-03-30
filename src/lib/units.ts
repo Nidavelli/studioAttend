@@ -13,13 +13,6 @@ export async function createUnit(
   try {
     const unitsRef = collection(db, "units");
     
-    // Check if unit code already exists
-    const q = query(unitsRef, where("code", "==", unitCode));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      return { success: false, error: "A unit with this code already exists." };
-    }
-
     await addDoc(unitsRef, {
       name: unitName,
       code: unitCode,

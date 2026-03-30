@@ -19,8 +19,8 @@ service cloud.firestore {
 
     // Rules for the 'units' collection
     match /units/{unitId} {
-      // Anyone authenticated can read unit information.
-      allow read: if request.auth != null;
+      // A user can read a unit if they are the lecturer or an enrolled student.
+      allow read: if request.auth.uid == resource.data.lecturerId || request.auth.uid in resource.data.enrolledStudents;
 
       // Only lecturers can create new units, and they must be the owner.
       allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer'
