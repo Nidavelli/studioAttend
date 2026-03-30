@@ -293,7 +293,14 @@ export default function Home() {
     };
     
     const fetchUnitData = async () => {
-        // This effect controls the loading state for the unit's details
+        if (!auth.currentUser) return;
+        try {
+          await auth.currentUser.getIdToken(true);
+        } catch (tokenError) {
+          console.error("Error refreshing auth token:", tokenError);
+          return;
+        }
+
         setIsDataLoading(true);
         const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents);
         setStudentsInUnit(studentData);
@@ -303,13 +310,13 @@ export default function Home() {
             const records: AttendanceRecord[] = [];
             snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data()} as AttendanceRecord));
             setAttendanceRecords(records);
-            setIsDataLoading(false); // Set loading to false on successful listener setup
-        }, (error) => {
+            setIsDataLoading(false); 
+        }, (error: any) => {
             console.error("Error fetching attendance records:", error);
-             if (auth.currentUser) {
-                toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
+            if (auth.currentUser && error.code === 'permission-denied') {
+              toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
             }
-            setIsDataLoading(false); // Also set loading to false on error
+            setIsDataLoading(false);
         });
         
         return unsubscribe;
