@@ -7,25 +7,38 @@ import QRCode from "react-qr-code";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { Student, Unit, AttendanceRecord } from '@/lib/data';
 import type { SignedInStudent } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle } from 'lucide-react';
+import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle, Trash2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import type { GeolocationCoordinates } from '@/app/page';
 import { useToast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { createUnit } from '@/lib/units';
-import { useUser } from '@/firebase/auth/use-user';
+import type { User } from 'firebase/auth';
 import { Skeleton } from './ui/skeleton';
+import { Checkbox } from './ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 const GeofenceMap = dynamic(() => import('./geofence-map').then((mod) => mod.GeofenceMap), { 
     ssr: false,
@@ -68,8 +81,7 @@ const createUnitFormSchema = z.object({
   attendanceThreshold: z.coerce.number().min(0).max(100, "Threshold must be between 0 and 100."),
 });
 
-function CreateUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
-  const { user } = useUser();
+function CreateUnitForm({ lecturer, setOpen }: { lecturer: User, setOpen: (open: boolean) => void }) {
   const { toast } = useToast();
   const form = useForm<z.infer<typeof createUnitFormSchema>>({
     resolver: zodResolver(createUnitFormSchema),
@@ -81,11 +93,7 @@ function CreateUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
   });
 
   async function onSubmit(values: z.infer<typeof createUnitFormSchema>) {
-    if (!user) {
-        toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to create a unit." });
-        return;
-    }
-    const result = await createUnit(values.unitName, values.unitCode, user.uid, values.attendanceThreshold);
+    const result = await createUnit(values.unitName, values.unitCode, lecturer.uid, values.attendanceThreshold);
     if (result.success) {
       toast({ title: "Unit Created", description: `The unit "${values.unitName}" has been successfully created.` });
       setOpen(false);
@@ -146,7 +154,84 @@ function CreateUnitForm({ setOpen }: { setOpen: (open: boolean) => void }) {
   )
 }
 
+function UnitManagementTab({ allUnits, lecturer, onDeleteUnit }: { allUnits: Unit[], lecturer: User, onDeleteUnit: (unitId: string) => void }) {
+    const [isCreateUnitOpen, setIsCreateUnitOpen] = useState(false);
+    const maxUnitsReached = allUnits.length >= 5;
+
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex justify-between items-center">
+                    <div>
+                        <CardTitle>Your Units</CardTitle>
+                        <CardDescription>Manage your created units. You can create a maximum of 5 units.</CardDescription>
+                    </div>
+                    <Dialog open={isCreateUnitOpen} onOpenChange={setIsCreateUnitOpen}>
+                        <DialogTrigger asChild>
+                            <Button disabled={maxUnitsReached}>
+                                <PlusCircle className="mr-2 h-4 w-4"/> New Unit
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Create a New Unit</DialogTitle>
+                            </DialogHeader>
+                            <CreateUnitForm lecturer={lecturer} setOpen={setIsCreateUnitOpen} />
+                        </DialogContent>
+                    </Dialog>
+                </div>
+                 {maxUnitsReached && (
+                    <p className="text-sm text-destructive mt-2">You have reached the maximum of 5 units.</p>
+                )}
+            </CardHeader>
+            <CardContent>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Unit Name</TableHead>
+                            <TableHead>Code</TableHead>
+                            <TableHead className="text-right">Action</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {allUnits.map(unit => (
+                            <TableRow key={unit.id}>
+                                <TableCell className="font-medium">{unit.name}</TableCell>
+                                <TableCell className="font-mono">{unit.code}</TableCell>
+                                <TableCell className="text-right">
+                                     <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="destructive" size="sm">
+                                                <Trash2 className="mr-2 h-4 w-4"/> Delete
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    This action cannot be undone. This will permanently delete the unit
+                                                    and all associated attendance records.
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => onDeleteUnit(unit.id)}>Continue</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+    );
+}
+
 export function LecturerDashboard({
+  lecturer,
+  allUnits,
   students,
   unit,
   liveLedgerStudents,
@@ -163,7 +248,11 @@ export function LecturerDashboard({
   radius,
   setRadius,
   onManualSignIn,
+  onDeleteUnit,
+  onDeleteAttendanceRecords,
 }: {
+  lecturer: User;
+  allUnits: Unit[];
   students: Student[];
   unit: Unit;
   liveLedgerStudents: SignedInStudent[];
@@ -180,11 +269,13 @@ export function LecturerDashboard({
   radius: number;
   setRadius: (radius: number) => void;
   onManualSignIn: (studentId: string, sessionId: string) => void;
+  onDeleteUnit: (unitId: string) => void;
+  onDeleteAttendanceRecords: (recordIds: string[]) => void;
 }) {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [isCreateUnitOpen, setIsCreateUnitOpen] = useState(false);
   const [isCopied, setIsCopied] = React.useState(false);
   const { toast } = useToast();
+  const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
 
   const handleSetLocation = () => {
     setIsGettingLocation(true);
@@ -228,31 +319,31 @@ export function LecturerDashboard({
     setTimeout(() => setIsCopied(false), 2000);
   };
   
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+        setSelectedRecords(liveLedgerStudents.map(s => s.recordId));
+    } else {
+        setSelectedRecords([]);
+    }
+  }
+
+  const handleRecordSelect = (recordId: string, checked: boolean) => {
+    if (checked) {
+        setSelectedRecords(prev => [...prev, recordId]);
+    } else {
+        setSelectedRecords(prev => prev.filter(id => id !== recordId));
+    }
+  }
+
+  const handleDeleteSelected = () => {
+    onDeleteAttendanceRecords(selectedRecords);
+    setSelectedRecords([]);
+  }
+
   if (!unit) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
-        <Card className="max-w-lg w-full">
-          <CardHeader>
-            <CardTitle>Welcome, Lecturer!</CardTitle>
-            <CardDescription>You haven't created any units yet. Create a unit to get started.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Dialog open={isCreateUnitOpen} onOpenChange={setIsCreateUnitOpen}>
-              <DialogTrigger asChild>
-                <Button><PlusCircle className="mr-2"/> Create Your First Unit</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create a New Unit</DialogTitle>
-                  <DialogDescription>
-                    Fill in the details below to add a new unit.
-                  </DialogDescription>
-                </DialogHeader>
-                <CreateUnitForm setOpen={setIsCreateUnitOpen} />
-              </DialogContent>
-            </Dialog>
-          </CardContent>
-        </Card>
+        <UnitManagementTab allUnits={allUnits} lecturer={lecturer} onDeleteUnit={onDeleteUnit} />
       </div>
     );
   }
@@ -260,203 +351,274 @@ export function LecturerDashboard({
   const qrCodeValue = isSessionActive ? JSON.stringify({ unitId: unit.id, sessionId: activeSessionId }) : '';
 
   return (
-    <div className="grid gap-6 grid-cols-1 lg:grid-cols-3 mt-4 md:mt-8">
-      <Card className="lg:col-span-1">
-        <CardHeader>
-          <CardTitle className="font-headline">Session Control</CardTitle>
-          <CardDescription>Manage the attendance session for <span className="font-bold">{unit.name}</span>.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center gap-4">
-          <div className="w-full space-y-2">
-            <Label>Unit Code (for students)</Label>
-            <div className="flex items-center space-x-2">
-                <Input type="text" readOnly value={unit.code} className="font-mono" />
-                <Button variant="outline" size="sm" onClick={copyUnitCode}>
-                    {isCopied ? <CheckCircle className="h-4 w-4 text-green-500" /> : "Copy"}
-                </Button>
-            </div>
-          </div>
-          <hr className="w-full border-t my-2" />
-          {!isSessionActive ? (
-            <>
-              <div className="w-full space-y-4">
-                <div className="space-y-2">
-                    <Label htmlFor="location">Session Location</Label>
-                    <div className="flex gap-2">
-                        <Input 
-                            id="location"
-                            type="text"
-                            value={lecturerLocation ? `Lat: ${lecturerLocation.lat.toFixed(4)}, Lng: ${lecturerLocation.lng.toFixed(4)}` : 'Not set'}
-                            readOnly
-                            disabled={isSessionActive}
-                        />
-                        <Button 
-                            variant="outline" 
-                            size="icon" 
-                            onClick={handleSetLocation} 
-                            disabled={isGettingLocation || isSessionActive}
-                        >
-                            {isGettingLocation ? <Loader2 className="animate-spin" /> : <MapPin />}
+    <div className="space-y-6 mt-4 md:mt-8">
+    <Tabs defaultValue="session">
+        <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="session">Session</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="grid">Attendance Grid</TabsTrigger>
+            <TabsTrigger value="management">Unit Management</TabsTrigger>
+        </TabsList>
+        <TabsContent value="session" className="mt-6">
+            <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+                 <Card className="lg:col-span-1">
+                    <CardHeader>
+                    <CardTitle className="font-headline">Session Control</CardTitle>
+                    <CardDescription>Manage the attendance session for <span className="font-bold">{unit.name}</span>.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col items-center justify-center gap-4">
+                    <div className="w-full space-y-2">
+                        <Label>Unit Code (for students)</Label>
+                        <div className="flex items-center space-x-2">
+                            <Input type="text" readOnly value={unit.code} className="font-mono" />
+                            <Button variant="outline" size="sm" onClick={copyUnitCode}>
+                                {isCopied ? <CheckCircle className="h-4 w-4 text-green-500" /> : "Copy"}
+                            </Button>
+                        </div>
+                    </div>
+                    <hr className="w-full border-t my-2" />
+                    {!isSessionActive ? (
+                        <>
+                        <div className="w-full space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="location">Session Location</Label>
+                                <div className="flex gap-2">
+                                    <Input 
+                                        id="location"
+                                        type="text"
+                                        value={lecturerLocation ? `Lat: ${lecturerLocation.lat.toFixed(4)}, Lng: ${lecturerLocation.lng.toFixed(4)}` : 'Not set'}
+                                        readOnly
+                                        disabled={isSessionActive}
+                                    />
+                                    <Button 
+                                        variant="outline" 
+                                        size="icon" 
+                                        onClick={handleSetLocation} 
+                                        disabled={isGettingLocation || isSessionActive}
+                                    >
+                                        {isGettingLocation ? <Loader2 className="animate-spin" /> : <MapPin />}
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {lecturerLocation && (
+                                <div className='space-y-2'>
+                                    <Label>Geofence Preview</Label>
+                                    <GeofenceMap center={lecturerLocation} radius={radius} />
+                                </div>
+                            )}
+
+                            <div className="space-y-2">
+                                <Label htmlFor="radius">Radius (meters)</Label>
+                                <Input 
+                                    id="radius"
+                                    type="number"
+                                    value={radius}
+                                    onChange={(e) => setRadius(Number(e.target.value))}
+                                    disabled={isSessionActive}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="duration">Duration (min)</Label>
+                                <Input 
+                                    id="duration" 
+                                    type="number"
+                                    value={sessionDuration}
+                                    onChange={(e) => setSessionDuration(Number(e.target.value))}
+                                    placeholder="e.g. 15"
+                                    disabled={isSessionActive}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-2">
+                            <span className={`h-3 w-3 rounded-full bg-red-500`}></span>
+                            <span className="font-medium">Session Inactive</span>
+                        </div>
+                        <Button onClick={onToggleSession} className="w-full">
+                            Start Session
                         </Button>
+                        </>
+                    ) : (
+                        <>
+                        <div className="flex items-center gap-2">
+                            <span className={`h-3 w-3 rounded-full bg-green-500 animate-pulse`}></span>
+                            <span className="font-medium">Session Active</span>
+                        </div>
+                        <Button onClick={onToggleSession} className="w-full" variant="destructive">
+                            End Session
+                        </Button>
+                        {sessionEndTime && <CountdownTimer endTime={sessionEndTime} />}
+                        {lecturerLocation && (
+                            <div className="w-full pt-4 mt-4 border-t space-y-2">
+                            <Label>Live Session Geofence</Label>
+                            <GeofenceMap center={lecturerLocation} radius={radius} />
+                            </div>
+                        )}
+                        </>
+                    )}
+
+                    </CardContent>
+                </Card>
+                
+                <Card className="lg:col-span-2">
+                    <CardHeader>
+                    <CardTitle className="font-headline">Live Session Details</CardTitle>
+                    <CardDescription>Students scan the QR code and enter the PIN to sign in.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                    {isSessionActive ? (
+                        <div className="flex flex-col md:flex-row items-center justify-center gap-6">
+                            <div className="bg-white p-4 rounded-lg">
+                                <QRCode value={qrCodeValue} size={144} />
+                            </div>
+                            <div className="flex flex-col items-center gap-2 text-center">
+                                <p className="text-muted-foreground text-sm">CURRENT PIN</p>
+                                <p className="text-4xl sm:text-6xl font-mono font-bold tracking-widest text-primary animate-pulse">{sessionPin}</p>
+                                <p className="text-muted-foreground text-xs mt-2">PIN refreshes every 15 seconds</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="text-center text-muted-foreground h-48 flex flex-col justify-center items-center">
+                            <QrCode className="h-10 w-10 mb-4"/>
+                            <p>Start a session to display QR Code and PIN.</p>
+                        </div>
+                    )}
+                    </CardContent>
+                </Card>
+
+                <Card className="lg:col-span-3">
+                    <CardHeader>
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <CardTitle className="font-headline">Live Attendance Ledger</CardTitle>
+                                <CardDescription>Students who have signed in for the current session.</CardDescription>
+                            </div>
+                            {selectedRecords.length > 0 && (
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="destructive" size="sm">
+                                            <Trash2 className="mr-2 h-4 w-4"/> Remove Selected ({selectedRecords.length})
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This will permanently remove {selectedRecords.length} attendance record(s).
+                                                This action cannot be undone.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={handleDeleteSelected}>Continue</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            )}
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                    <div className="max-h-80 overflow-y-auto">
+                        <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead padding="checkbox" className="w-12">
+                                    <Checkbox
+                                        checked={selectedRecords.length === liveLedgerStudents.length && liveLedgerStudents.length > 0}
+                                        onCheckedChange={(checked) => handleSelectAll(Boolean(checked))}
+                                        aria-label="Select all"
+                                        disabled={!isSessionActive}
+                                    />
+                                </TableHead>
+                                <TableHead>Student</TableHead>
+                                <TableHead>Sign-in Time</TableHead>
+                                <TableHead className="text-right">Action</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {liveLedgerStudents.length > 0 ? (
+                            liveLedgerStudents.map((student) => {
+                                const avatar = findImage(student.avatarId);
+                                const isSelected = selectedRecords.includes(student.recordId);
+                                return (
+                                <TableRow key={student.id} data-state={isSelected ? "selected" : ""}>
+                                    <TableCell padding="checkbox">
+                                        <Checkbox
+                                            checked={isSelected}
+                                            onCheckedChange={(checked) => handleRecordSelect(student.recordId, Boolean(checked))}
+                                            aria-label={`Select ${student.name}`}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                    <div className="flex items-center gap-3">
+                                        <Avatar>
+                                        <AvatarImage src={avatar?.imageUrl} alt={student.name} data-ai-hint={avatar?.imageHint}/>
+                                        <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                                        </Avatar>
+                                        <span className="font-medium">{student.name}</span>
+                                    </div>
+                                    </TableCell>
+                                    <TableCell className="font-mono">{student.signedInAt}</TableCell>
+                                    <TableCell className="text-right">
+                                        <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            onClick={() => onDeleteAttendanceRecords([student.recordId])}
+                                            className="text-muted-foreground hover:text-destructive"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                                );
+                            })
+                            ) : (
+                            <TableRow>
+                                <TableCell colSpan={4} className="text-center text-muted-foreground h-24">
+                                {isSessionActive ? 'Waiting for students to sign in...' : 'Session has not started.'}
+                                </TableCell>
+                            </TableRow>
+                            )}
+                        </TableBody>
+                        </Table>
                     </div>
-                </div>
-
-                {lecturerLocation && (
-                    <div className='space-y-2'>
-                        <Label>Geofence Preview</Label>
-                        <GeofenceMap center={lecturerLocation} radius={radius} />
-                    </div>
-                )}
-
-                 <div className="space-y-2">
-                    <Label htmlFor="radius">Radius (meters)</Label>
-                    <Input 
-                        id="radius"
-                        type="number"
-                        value={radius}
-                        onChange={(e) => setRadius(Number(e.target.value))}
-                        disabled={isSessionActive}
-                    />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="duration">Duration (min)</Label>
-                    <Input 
-                        id="duration" 
-                        type="number"
-                        value={sessionDuration}
-                        onChange={(e) => setSessionDuration(Number(e.target.value))}
-                        placeholder="e.g. 15"
-                        disabled={isSessionActive}
-                    />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <span className={`h-3 w-3 rounded-full bg-red-500`}></span>
-                <span className="font-medium">Session Inactive</span>
-              </div>
-              <Button onClick={onToggleSession} className="w-full">
-                Start Session
-              </Button>
-            </>
-          ) : (
-             <>
-               <div className="flex items-center gap-2">
-                  <span className={`h-3 w-3 rounded-full bg-green-500 animate-pulse`}></span>
-                  <span className="font-medium">Session Active</span>
-               </div>
-               <Button onClick={onToggleSession} className="w-full" variant="destructive">
-                  End Session
-               </Button>
-               {sessionEndTime && <CountdownTimer endTime={sessionEndTime} />}
-               {lecturerLocation && (
-                 <div className="w-full pt-4 mt-4 border-t space-y-2">
-                   <Label>Live Session Geofence</Label>
-                   <GeofenceMap center={lecturerLocation} radius={radius} />
-                 </div>
-               )}
-             </>
-          )}
-
-        </CardContent>
-      </Card>
-      
-      <Card className="lg:col-span-2">
-        <CardHeader>
-          <CardTitle className="font-headline">Live Session Details</CardTitle>
-          <CardDescription>Students scan the QR code and enter the PIN to sign in.</CardDescription>
-        </CardHeader>
-        <CardContent>
-           {isSessionActive ? (
-            <div className="flex flex-col md:flex-row items-center justify-center gap-6">
-                <div className="bg-white p-4 rounded-lg">
-                    <QRCode value={qrCodeValue} size={144} />
-                </div>
-                <div className="flex flex-col items-center gap-2 text-center">
-                    <p className="text-muted-foreground text-sm">CURRENT PIN</p>
-                    <p className="text-4xl sm:text-6xl font-mono font-bold tracking-widest text-primary animate-pulse">{sessionPin}</p>
-                    <p className="text-muted-foreground text-xs mt-2">PIN refreshes every 15 seconds</p>
-                </div>
+                    </CardContent>
+                </Card>
             </div>
-           ) : (
-             <div className="text-center text-muted-foreground h-48 flex flex-col justify-center items-center">
-                <QrCode className="h-10 w-10 mb-4"/>
-                <p>Start a session to display QR Code and PIN.</p>
-             </div>
-           )}
-        </CardContent>
-      </Card>
-
-      <Card className="lg:col-span-3">
-        <CardHeader>
-          <CardTitle className="font-headline">Live Attendance Ledger</CardTitle>
-          <CardDescription>Students who have signed in for the current session.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="max-h-80 overflow-y-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Student</TableHead>
-                  <TableHead className="text-right">Sign-in Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {liveLedgerStudents.length > 0 ? (
-                  liveLedgerStudents.map((student) => {
-                    const avatar = findImage(student.avatarId);
-                    return (
-                      <TableRow key={student.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar>
-                              <AvatarImage src={avatar?.imageUrl} alt={student.name} data-ai-hint={avatar?.imageHint}/>
-                              <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <span className="font-medium">{student.name}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-mono">{student.signedInAt}</TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={2} className="text-center text-muted-foreground h-24">
-                      {isSessionActive ? 'Waiting for students to sign in...' : 'Session has not started.'}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="lg:col-span-3">
-        <CardHeader>
-          <CardTitle className="font-headline">Attendance Analytics</CardTitle>
-          <CardDescription>Overall attendance records for all students in this unit.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AttendanceAnalytics students={students} unit={unit} attendanceRecords={attendanceRecords} />
-        </CardContent>
-      </Card>
-
-      <Card className="lg:col-span-3">
-        <CardHeader>
-          <CardTitle className="font-headline">Manual Attendance Grid</CardTitle>
-          <CardDescription>Manually mark a student as present for a specific session. This is a permanent action.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AttendanceReport 
-            students={students} 
-            unit={unit} 
-            attendanceRecords={attendanceRecords}
-            onManualSignIn={onManualSignIn}
-          />
-        </CardContent>
-      </Card>
+        </TabsContent>
+        <TabsContent value="analytics" className="mt-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="font-headline">Attendance Analytics</CardTitle>
+                    <CardDescription>Overall attendance records for all students in this unit.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <AttendanceAnalytics students={students} unit={unit} attendanceRecords={attendanceRecords} />
+                </CardContent>
+            </Card>
+        </TabsContent>
+        <TabsContent value="grid" className="mt-6">
+            <Card>
+                 <CardHeader>
+                    <CardTitle className="font-headline">Manual Attendance Grid</CardTitle>
+                    <CardDescription>Manually mark a student as present for a specific session. This is a permanent action.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <AttendanceReport 
+                        students={students} 
+                        unit={unit} 
+                        attendanceRecords={attendanceRecords}
+                        onManualSignIn={onManualSignIn}
+                        lecturer={lecturer}
+                    />
+                </CardContent>
+            </Card>
+        </TabsContent>
+        <TabsContent value="management" className="mt-6">
+            <UnitManagementTab allUnits={allUnits} lecturer={lecturer} onDeleteUnit={onDeleteUnit} />
+        </TabsContent>
+    </Tabs>
     </div>
   );
 }

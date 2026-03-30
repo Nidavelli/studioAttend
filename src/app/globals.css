@@ -83,3 +83,28 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+    #printable-report, #printable-report * {
+      visibility: visible;
+    }
+    #printable-report {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      margin: 2rem;
+    }
+    .no-print {
+      display: none;
+    }
+    @page {
+      size: auto;
+      margin: 1cm;
+    }
+  }
+}

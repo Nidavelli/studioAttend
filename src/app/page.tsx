@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase/auth/use-user';
 import { useAuth, useFirestore } from '@/firebase/provider';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, writeBatch, deleteDoc } from 'firebase/firestore';
 import { Header } from '@/components/header';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
@@ -14,10 +14,8 @@ import type { Student, Unit, UnitWithAttendance, AttendanceRecord } from '@/lib/
 import { useToast } from "@/hooks/use-toast";
 import { haversineDistance } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogTrigger } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { PlusCircle } from 'lucide-react';
-import { addSessionToUnitHistory } from '@/lib/units';
+import { deleteUnit as deleteUnitFromDb } from '@/lib/units';
+
 
 export type GeolocationCoordinates = {
   lat: number;
@@ -25,7 +23,8 @@ export type GeolocationCoordinates = {
 };
 
 export type SignedInStudent = {
-  id: string;
+  id: string; // student uid
+  recordId: string; // attendance record firestore id
   name: string;
   avatarId: string;
   signedInAt: string;
@@ -112,6 +111,7 @@ export default function Home() {
         const student = studentsInUnit.find(s => s.uid === record.studentId);
         return student ? {
             id: student.uid,
+            recordId: record.id,
             name: student.name,
             avatarId: student.avatarId,
             signedInAt: record.timestamp?.toDate()?.toLocaleTimeString() || 'Processing...',
@@ -350,6 +350,18 @@ export default function Home() {
     setSelectedUnitId(unitId);
   };
 
+  const handleUnitDelete = async (unitId: string) => {
+    const result = await deleteUnitFromDb(unitId);
+    if (result.success) {
+      toast({ title: "Unit Deleted", description: "The unit has been successfully deleted." });
+      if (selectedUnitId === unitId) {
+        setSelectedUnitId(units.length > 1 ? units.filter(u => u.id !== unitId)[0].id : null);
+      }
+    } else {
+      toast({ variant: "destructive", title: "Deletion Failed", description: result.error });
+    }
+  };
+
   const recordSuccessfulSignIn = useCallback(async (unitId: string, studentId: string, signInMethod: 'location' | 'qr_code' | 'manual'): Promise<boolean> => {
     const unit = studentUnits.find(u => u.id === unitId) || units.find(u => u.id === unitId);
     if (!unit || !unit.activeSessionId) return false;
@@ -461,6 +473,31 @@ export default function Home() {
 
     toast({ title: "Attendance Marked", description: `${student.name} has been manually marked as present.` });
   };
+  
+  const handleAttendanceRecordDelete = async (recordIds: string[]) => {
+    if (!selectedUnitId || recordIds.length === 0) return;
+
+    const batch = writeBatch(firestore);
+    recordIds.forEach(recordId => {
+      const recordRef = doc(firestore, `units/${selectedUnitId}/attendance`, recordId);
+      batch.delete(recordRef);
+    });
+
+    try {
+      await batch.commit();
+      toast({
+        title: "Record(s) Deleted",
+        description: `Successfully removed ${recordIds.length} attendance record(s).`
+      });
+    } catch (error) {
+      console.error("Error deleting attendance records:", error);
+      toast({
+        variant: "destructive",
+        title: "Deletion Failed",
+        description: "Could not remove the selected attendance records."
+      });
+    }
+  };
 
   const toggleSession = async () => {
     if (!selectedUnitId) {
@@ -478,7 +515,8 @@ export default function Home() {
         return;
       }
       const newSessionId = `${Date.now()}`;
-      await addSessionToUnitHistory(selectedUnitId!, newSessionId);
+      // This is now handled in lib/units.ts, called from CreateUnitForm
+      // await addSessionToUnitHistory(selectedUnitId!, newSessionId);
 
       const endTime = new Date(new Date().getTime() + sessionDuration * 60000);
       
@@ -525,12 +563,6 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
               <h2 className="text-2xl font-bold font-headline">{selectedUnit?.name || "No Unit Selected"}</h2>
               <div className="flex items-center gap-2">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm"><PlusCircle className="mr-2 h-4 w-4"/> New Unit</Button>
-                    </DialogTrigger>
-                    {/* The content for this dialog is in LecturerDashboard */}
-                  </Dialog>
                 <div className="w-full sm:w-auto min-w-64">
                   <Select onValueChange={handleUnitChange} value={selectedUnitId || ""} disabled={sessionActive}>
                     <SelectTrigger>
@@ -558,8 +590,10 @@ export default function Home() {
             />
           )}
 
-          {role === 'lecturer' && (
+          {role === 'lecturer' && user && (
             <LecturerDashboard
+              lecturer={user}
+              allUnits={units}
               students={studentsInUnit}
               unit={selectedUnit!}
               liveLedgerStudents={liveLedgerStudents}
@@ -576,6 +610,8 @@ export default function Home() {
               radius={radius}
               setRadius={setRadius}
               onManualSignIn={handleManualSignIn}
+              onDeleteUnit={handleUnitDelete}
+              onDeleteAttendanceRecords={handleAttendanceRecordDelete}
             />
           )}
         </div>

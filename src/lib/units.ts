@@ -1,5 +1,5 @@
 
-import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction, updateDoc, arrayUnion } from "firebase/firestore";
+import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction, updateDoc, arrayUnion, deleteDoc, writeBatch } from "firebase/firestore";
 import { firebaseApp } from "@/firebase/config";
 
 const db = getFirestore(firebaseApp);
@@ -82,4 +82,29 @@ export async function addSessionToUnitHistory(unitId: string, sessionId: string)
     await updateDoc(unitRef, {
         sessionHistory: arrayUnion(sessionId)
     });
+}
+
+export async function deleteUnit(
+  unitId: string
+): Promise<{ success: boolean; error?: string; }> {
+  try {
+    const unitRef = doc(db, 'units', unitId);
+    const attendanceRef = collection(db, 'units', unitId, 'attendance');
+
+    // Delete all attendance records in the subcollection
+    const attendanceSnapshot = await getDocs(attendanceRef);
+    const batch = writeBatch(db);
+    attendanceSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+    });
+    await batch.commit();
+
+    // Delete the unit document itself
+    await deleteDoc(unitRef);
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error deleting unit:", error);
+    return { success: false, error: error.message || "Failed to delete unit." };
+  }
 }
