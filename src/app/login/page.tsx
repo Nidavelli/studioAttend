@@ -33,7 +33,9 @@ export default function LoginPage() {
   const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
+  const [signUpConfirmPassword, setSignUpConfirmPassword] = useState('');
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
+  const [showSignUpConfirmPassword, setShowSignUpConfirmPassword] = useState(false);
   const [signUpRole, setSignUpRole] = useState('student');
 
   const handleLoginSuccess = (user: any) => {
@@ -58,7 +60,10 @@ export default function LoginPage() {
         description = 'This email address is already in use by another account.';
     } else if (error.code === 'auth/invalid-credential') {
         description = 'Invalid email or password. Please try again.';
-    } else if (error.code === 'permission-denied') {
+    } else if (error.code === 'auth/weak-password') {
+        description = 'The password is too weak. Please choose a stronger password.';
+    }
+     else if (error.code === 'permission-denied') {
         description = 'There was a problem setting up your profile. Please check Firestore rules.';
     }
     
@@ -81,6 +86,16 @@ export default function LoginPage() {
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (signUpPassword !== signUpConfirmPassword) {
+      toast({
+        variant: 'destructive',
+        title: 'Passwords Do Not Match',
+        description: 'Please ensure both password fields are identical.',
+      });
+      return;
+    }
+    
     let userCredential;
     try {
       userCredential = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
@@ -160,9 +175,9 @@ export default function LoginPage() {
       <div className="flex items-center justify-center py-12">
         <div className="mx-auto grid w-[350px] gap-6">
             <div className="grid gap-2 text-center">
-                 <h1 className="text-3xl font-bold font-headline">Login to AttendSync</h1>
+                 <h1 className="text-3xl font-bold font-headline">Welcome to AttendSync</h1>
                  <p className="text-balance text-muted-foreground">
-                    Enter your credentials to access your dashboard
+                    Your modern attendance solution
                  </p>
             </div>
             <Tabs defaultValue="signin" className="w-full">
@@ -171,6 +186,9 @@ export default function LoginPage() {
                 <TabsTrigger value="signup">Sign Up</TabsTrigger>
               </TabsList>
               <TabsContent value="signin">
+                 <div className="grid gap-2 text-center pt-4">
+                     <h2 className="text-xl font-bold">Login to your Account</h2>
+                 </div>
                 <form onSubmit={handleEmailSignIn} className="space-y-4 pt-4">
                   <div className="space-y-2">
                     <Label htmlFor="email-signin">Email</Label>
@@ -208,6 +226,9 @@ export default function LoginPage() {
                 </form>
               </TabsContent>
               <TabsContent value="signup">
+                <div className="grid gap-2 text-center pt-4">
+                     <h2 className="text-xl font-bold">Create your AttendSync Account</h2>
+                </div>
                 <form onSubmit={handleEmailSignUp} className="space-y-4 pt-4">
                    <div className="space-y-2">
                     <Label>Your Role</Label>
@@ -275,6 +296,28 @@ export default function LoginPage() {
                         {showSignUpPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
+                   <div className="relative space-y-2">
+                    <Label htmlFor="password-confirm-signup">Confirm Password</Label>
+                    <Input
+                      id="password-confirm-signup"
+                      type={showSignUpConfirmPassword ? 'text' : 'password'}
+                      required
+                      value={signUpConfirmPassword}
+                      onChange={(e) => setSignUpConfirmPassword(e.target.value)}
+                    />
+                     <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-7 h-7 w-7"
+                        onClick={() => setShowSignUpConfirmPassword(!showSignUpConfirmPassword)}
+                    >
+                        {showSignUpConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                   <p className="text-xs text-muted-foreground">
+                      Password must be at least 8 characters and contain one number and one special character.
+                    </p>
                   <Button type="submit" className="w-full">
                     Create Account
                   </Button>
