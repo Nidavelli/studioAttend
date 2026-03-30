@@ -297,9 +297,10 @@ export function LecturerDashboard({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         });
+        const accuracy = Math.round(position.coords.accuracy);
         toast({
             title: "Location Set",
-            description: "Your current location has been set for the session.",
+            description: `Your location has been set with an accuracy of ~${accuracy} meters.`,
         });
         setIsGettingLocation(false);
       },

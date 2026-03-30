@@ -27,6 +27,7 @@ import { StudentAttendanceGrid } from './student-attendance-grid';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { useFirestore } from '@/firebase/provider';
 import { Skeleton } from './ui/skeleton';
+import type { User } from 'firebase/auth';
 
 const GeofenceMap = dynamic(() => import('./geofence-map').then((mod) => mod.GeofenceMap), { 
     ssr: false,
@@ -172,13 +173,14 @@ export function StudentView({
   unitStatuses,
   onLocationSignIn,
   onQrSignIn,
+  user,
 }: {
   units: UnitWithAttendance[];
   unitStatuses: Record<string, UnitStatus>;
   onLocationSignIn: (unitId: string, studentId: string, location: GeolocationCoordinates, deviceId: string) => Promise<{ success: boolean, distance?: number }>;
   onQrSignIn: (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Promise<{ success: boolean }>;
+  user: User;
 }) {
-  const { user } = useUser();
   const firestore = useFirestore();
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
   const [signInError, setSignInError] = useState<SignInError>(null);
@@ -316,6 +318,7 @@ export function StudentView({
         const studentLocation = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
         };
         setSignInStep('recording');
         
@@ -336,7 +339,7 @@ export function StudentView({
               }
               setSignInError({ title: "Too Far Away", description: `You are approximately ${distance} meters from the classroom. Please move closer.` });
           } else {
-              setSignInError({ title: "Sign-in Failed", description: `Could not verify your location or you may have already signed in.` });
+             setSignInError({ title: "Sign-in Failed", description: `Could not verify your location. Please check notifications for details.` });
           }
           setSignInStep('locationError');
         }

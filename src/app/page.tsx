@@ -20,6 +20,7 @@ import { deleteUnit as deleteUnitFromDb } from '@/lib/units';
 export type GeolocationCoordinates = {
   lat: number;
   lng: number;
+  accuracy?: number;
 };
 
 export type SignedInStudent = {
@@ -289,15 +290,20 @@ export default function Home() {
   // Effect for lecturers to fetch students and attendance records for the selected unit
   useEffect(() => {
     if (role !== 'lecturer' || !selectedUnit || !user) {
+      if (role === 'lecturer' && units.length > 0 && !selectedUnit) {
+        setIsDataLoading(false);
+      }
       return;
     };
     
     const fetchUnitData = async () => {
         if (!auth.currentUser) return;
         try {
+          // Force token refresh before making a listener call, especially after a fresh sign-up.
           await auth.currentUser.getIdToken(true);
         } catch (tokenError) {
           console.error("Error refreshing auth token:", tokenError);
+          setIsDataLoading(false);
           return;
         }
 
@@ -314,10 +320,10 @@ export default function Home() {
             const records: AttendanceRecord[] = [];
             snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data()} as AttendanceRecord));
             setAttendanceRecords(records);
-            setIsDataLoading(false); 
+            setIsDataLoading(false);
         }, (error: any) => {
             console.error("Error fetching attendance records:", error);
-            if (auth.currentUser && error.code === 'permission-denied') {
+             if (auth.currentUser && error.code === 'permission-denied') {
               toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
             }
             setIsDataLoading(false);
@@ -335,7 +341,7 @@ export default function Home() {
         }
       });
     }
-  }, [selectedUnit, firestore, role, user, toast, auth]);
+  }, [selectedUnit, firestore, role, user, toast, auth, units.length]);
 
     // Effect to restore session state for lecturer
     useEffect(() => {
@@ -462,11 +468,22 @@ export default function Home() {
         toast({ variant: "destructive", title: "Location Not Set", description: "The lecturer has not set a location for this session." });
         return { success: false };
     }
+
+    const studentAccuracy = studentLocation.accuracy || 0;
+    if (studentAccuracy > 50) {
+        toast({
+            variant: "destructive",
+            title: "Poor GPS Signal",
+            description: `Your location accuracy is over 50 meters. Please move to a more open area and try again.`,
+        });
+        return { success: false };
+    }
     
     const distance = haversineDistance(studentLocation, locationForCheck);
-    const sessionRadius = unit.sessionRadius || 50; // Use persisted radius or default
+    const sessionRadius = unit.sessionRadius || 50;
+    const graceDistance = 20; // 20-meter buffer for accuracy issues
 
-    if (distance > sessionRadius) {
+    if (distance > (sessionRadius + studentAccuracy + graceDistance)) {
         return { success: false, distance: Math.round(distance) };
     }
 
@@ -612,12 +629,13 @@ export default function Home() {
             </div>
           )}
 
-          {role === 'student' && (
+          {role === 'student' && user && (
             <StudentView
               units={studentUnits}
               unitStatuses={unitStatuses}
               onLocationSignIn={handleLocationSignIn}
               onQrSignIn={handleQrSignIn}
+              user={user}
             />
           )}
 
