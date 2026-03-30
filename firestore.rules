@@ -45,13 +45,12 @@ service cloud.firestore {
 
       // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
-        // READ RULE FIX: This rule is now compatible with collection listeners.
-        // It allows a user to read an attendance record if they are the lecturer of the parent unit,
-        // or if the attendance record belongs to them. This rule is now structured to work with collection queries.
-        allow read: if 
-          (get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid)
-          ||
-          (resource.data.studentId == request.auth.uid && request.auth.uid in get(/databases/$(database)/documents/units/$(unitId)).data.enrolledStudents);
+        // NEW READ RULE:
+        // A user can read a record if they are the lecturer associated with it,
+        // or if they are the student it belongs to.
+        // This rule IS compatible with collection queries because it only uses `resource.data`.
+        allow read: if request.auth != null &&
+                      (resource.data.lecturerId == request.auth.uid || resource.data.studentId == request.auth.uid);
 
         // CREATE: Students can only sign-in for an ACTIVE session.
         // Lecturers can manually add attendance for any HISTORICAL session.

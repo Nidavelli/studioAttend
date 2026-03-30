@@ -33,6 +33,7 @@ export type AttendanceRecord = {
   id: string; // Firestore document ID
   studentId: string;
   sessionId: string;
+  lecturerId: string; // Denormalized for security rules
   timestamp: any; // Firestore Timestamp
   signInMethod: 'location' | 'qr_code' | 'manual';
 };

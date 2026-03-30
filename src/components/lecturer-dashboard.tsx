@@ -175,6 +175,9 @@ function UnitManagementTab({ allUnits, lecturer, onDeleteUnit }: { allUnits: Uni
                         <DialogContent>
                             <DialogHeader>
                                 <DialogTitle>Create a New Unit</DialogTitle>
+                                <DialogDescription>
+                                  Fill in the details below to create a new course unit.
+                                </DialogDescription>
                             </DialogHeader>
                             <CreateUnitForm lecturer={lecturer} setOpen={setIsCreateUnitOpen} />
                         </DialogContent>

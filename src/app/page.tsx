@@ -286,7 +286,7 @@ export default function Home() {
 
   // Effect for lecturers to fetch students and attendance records for the selected unit
   useEffect(() => {
-    if (role !== 'lecturer' || !user || !selectedUnit) {
+    if (role !== 'lecturer' || !selectedUnit || !user) {
       setStudentsInUnit([]);
       setAttendanceRecords([]);
       return;
@@ -364,7 +364,13 @@ export default function Home() {
     const unit = studentUnits.find(u => u.id === unitId) || units.find(u => u.id === unitId);
     if (!unit || !unit.activeSessionId) return false;
     
-    const sessionId = unit.activeSessionId;
+    const { activeSessionId: sessionId, lecturerId } = unit;
+    if (!lecturerId) {
+        console.error("Lecturer ID missing from unit data. Cannot create attendance record.");
+        toast({ variant: "destructive", title: "Sign-In Failed", description: "System error: Unit is missing owner information." });
+        return false;
+    }
+
     const attendanceColRef = collection(firestore, `units/${unitId}/attendance`);
     
     const dupeQuery = query(attendanceColRef, where("studentId", "==", studentId), where("sessionId", "==", sessionId));
@@ -378,6 +384,7 @@ export default function Home() {
         await addDoc(attendanceColRef, {
             studentId: studentId,
             sessionId: sessionId,
+            lecturerId: lecturerId,
             timestamp: serverTimestamp(),
             signInMethod: signInMethod,
         });
@@ -448,7 +455,14 @@ export default function Home() {
   };
 
   const handleManualSignIn = async (studentId: string, sessionId: string) => {
-    if (!selectedUnitId) return;
+    if (!selectedUnitId || !selectedUnit) return;
+    
+    const { lecturerId } = selectedUnit;
+    if (!lecturerId) {
+      console.error("Lecturer ID is missing from the selected unit.");
+      toast({ variant: "destructive", title: "Error", description: "Cannot manually sign in. Unit owner is not defined."});
+      return;
+    }
 
     const attendanceColRef = collection(firestore, `units/${selectedUnitId}/attendance`);
     const dupeQuery = query(attendanceColRef, where("studentId", "==", studentId), where("sessionId", "==", sessionId));
@@ -465,6 +479,7 @@ export default function Home() {
     await addDoc(attendanceColRef, {
         studentId: studentId,
         sessionId: sessionId,
+        lecturerId: lecturerId,
         timestamp: serverTimestamp(),
         signInMethod: 'manual',
     });
@@ -623,6 +638,3 @@ export default function Home() {
     </div>
   );
 }
-
-
-    

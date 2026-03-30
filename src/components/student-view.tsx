@@ -487,7 +487,12 @@ export function StudentView({
 
       <Dialog open={isSignInDialogOpen} onOpenChange={(isOpen) => { if (!isOpen) { resetSignInFlow(); setIsSignInDialogOpen(false); } }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Student Sign-In</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Student Sign-In</DialogTitle>
+            <DialogDescription>
+              Choose a method to verify your attendance or follow the on-screen instructions.
+            </DialogDescription>
+          </DialogHeader>
           {renderSignInContent()}
         </DialogContent>
       </Dialog>
