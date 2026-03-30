@@ -1,35 +1,23 @@
-
 'use client';
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  GoogleAuthProvider,
-  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
-  User,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase/provider';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from '@/hooks/use-toast';
 import { AttendSyncIcon } from '@/components/icons';
-import { GraduationCap, School } from 'lucide-react';
+import { GraduationCap, School, Eye, EyeOff, CheckCircle, MapPin, QrCode } from 'lucide-react';
 
-const provider = new GoogleAuthProvider();
 
 export default function LoginPage() {
   const auth = useAuth();
@@ -39,17 +27,16 @@ export default function LoginPage() {
 
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
+  const [showSignInPassword, setShowSignInPassword] = useState(false);
+
 
   const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
+  const [showSignUpPassword, setShowSignUpPassword] = useState(false);
   const [signUpRole, setSignUpRole] = useState('student');
 
-  const [showRoleSelection, setShowRoleSelection] = useState(false);
-  const [newUser, setNewUser] = useState<User | null>(null);
-
-
-  const handleLoginSuccess = (user: User) => {
+  const handleLoginSuccess = (user: any) => {
     toast({
       title: 'Login Successful',
       description: `Welcome back, ${user.displayName || user.email}!`,
@@ -57,7 +44,7 @@ export default function LoginPage() {
     router.push('/');
   };
 
-  const handleSignUpSuccess = async (user: User) => {
+  const handleSignUpSuccess = async (user: any) => {
     toast({
       title: 'Sign Up Successful!',
       description: `Welcome, ${user.displayName}!`,
@@ -69,6 +56,8 @@ export default function LoginPage() {
     let description = error.message || 'An unexpected error occurred.';
     if (error.code === 'auth/email-already-in-use') {
         description = 'This email address is already in use by another account.';
+    } else if (error.code === 'auth/invalid-credential') {
+        description = 'Invalid email or password. Please try again.';
     } else if (error.code === 'permission-denied') {
         description = 'There was a problem setting up your profile. Please check Firestore rules.';
     }
@@ -78,44 +67,6 @@ export default function LoginPage() {
       title: 'Authentication Failed',
       description: description,
     });
-  };
-
-  const handleGoogleSignIn = async () => {
-    try {
-      const result = await signInWithPopup(auth, provider);
-      const userDocRef = doc(firestore, "users", result.user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-
-      if (userDocSnap.exists()) {
-        handleLoginSuccess(result.user);
-      } else {
-        setNewUser(result.user);
-        setShowRoleSelection(true);
-      }
-    } catch (error) {
-      handleAuthError(error);
-    }
-  };
-
-  const handleRoleSelection = async (selectedRole: string) => {
-    if (!newUser) return;
-    try {
-        const userDocRef = doc(firestore, "users", newUser.uid);
-        await setDoc(userDocRef, {
-            uid: newUser.uid,
-            name: newUser.displayName,
-            email: newUser.email,
-            role: selectedRole,
-        });
-        await handleSignUpSuccess(newUser);
-    } catch (error) {
-        console.error("Error saving user role:", error);
-        toast({
-            variant: 'destructive',
-            title: 'Registration Incomplete',
-            description: 'We failed to save your role. Please try signing in again or contact support.',
-        });
-    }
   };
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
@@ -162,103 +113,58 @@ export default function LoginPage() {
     }
   };
 
-  if (showRoleSelection) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-sm">
-          <CardHeader className="text-center">
-            <CardTitle className="font-headline">One Last Step</CardTitle>
-            <CardDescription>
-              Welcome, {newUser?.displayName}! Please select your role to finish setting up your account.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-              <RadioGroup defaultValue="student" className="grid grid-cols-2 gap-4" onValueChange={setSignUpRole}>
-                <div>
-                  <RadioGroupItem value="student" id="role-student" className="peer sr-only" />
-                  <Label
-                    htmlFor="role-student"
-                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                  >
-                    <GraduationCap className="mb-3 h-6 w-6" />
-                    Student
-                  </Label>
-                </div>
-                <div>
-                  <RadioGroupItem value="lecturer" id="role-lecturer" className="peer sr-only" />
-                  <Label
-                    htmlFor="role-lecturer"
-                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                  >
-                    <School className="mb-3 h-6 w-6" />
-                    Lecturer
-                  </Label>
-                </div>
-              </RadioGroup>
-            <Button onClick={() => handleRoleSelection(signUpRole)} className="w-full">
-              Complete Registration
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <div className="flex justify-center items-center gap-3 mb-4">
-             <AttendSyncIcon className="h-8 w-8 text-primary" />
-             <h1 className="text-2xl font-headline font-bold text-foreground">
-                AttendSync
-             </h1>
-          </div>
-          <CardTitle className="font-headline">Welcome</CardTitle>
-          <CardDescription>
-            Sign in or create an account to continue
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={handleGoogleSignIn}
-            >
-              <svg className="mr-2 h-4 w-4" viewBox="0 0 48 48">
-                <path
-                  fill="#EA4335"
-                  d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l8.38 6.42C12.55 13.44 17.84 9.5 24 9.5z"
-                ></path>
-                <path
-                  fill="#4285F4"
-                  d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6.09c4.5-4.18 7.09-10.36 7.09-17.74z"
-                ></path>
-                <path
-                  fill="#FBBC05"
-                  d="M10.94 28.72c-.52-1.57-.82-3.24-.82-5.04s.3-3.47.82-5.04l-8.38-6.42C.93 16.6 0 20.14 0 24s.93 7.4 2.56 11.14l8.38-6.42z"
-                ></path>
-                <path
-                  fill="#34A853"
-                  d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6.09c-2.15 1.45-4.92 2.3-8.16 2.3-6.15 0-11.44-3.94-13.38-9.36l-8.38 6.42C6.51 42.62 14.62 48 24 48z"
-                ></path>
-                <path fill="none" d="M0 0h48v48H0z"></path>
-              </svg>
-              Sign in with Google
-            </Button>
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">
-                  Or continue with
-                </span>
-              </div>
+    <div className="w-full min-h-screen lg:grid lg:grid-cols-2">
+      <div className="relative hidden flex-col bg-muted p-10 text-white lg:flex">
+        <div className="absolute inset-0 bg-primary" />
+        <div className="relative z-20 flex items-center text-lg font-medium">
+            <AttendSyncIcon className="h-8 w-8 mr-3" />
+            AttendSync
+        </div>
+        <div className="relative z-20 mt-auto">
+            <div className="space-y-2">
+                 <h2 className="text-4xl font-bold font-headline">Modernize Your Attendance Tracking</h2>
+                 <p className="text-primary-foreground/80">
+                    AttendSync replaces tedious manual attendance with a secure, real-time system, ensuring academic integrity and saving valuable class time.
+                 </p>
             </div>
-
+        </div>
+         <div className="relative z-20 mt-10">
+            <h3 className="font-semibold mb-4 font-headline">Key Features:</h3>
+            <ul className="space-y-4">
+                <li className="flex items-start gap-3">
+                    <QrCode className="h-6 w-6 mt-1 text-accent"/>
+                    <div>
+                        <h4 className="font-semibold">Dynamic QR Attendance</h4>
+                        <p className="text-sm text-primary-foreground/70">Lecturers generate time-sensitive QR codes and PINs for secure, in-class verification.</p>
+                    </div>
+                </li>
+                <li className="flex items-start gap-3">
+                    <MapPin className="h-6 w-6 mt-1 text-accent"/>
+                     <div>
+                        <h4 className="font-semibold">Geofenced Location Verification</h4>
+                        <p className="text-sm text-primary-foreground/70">Ensure students are physically present with location-based sign-ins within a set radius.</p>
+                    </div>
+                </li>
+                <li className="flex items-start gap-3">
+                    <CheckCircle className="h-6 w-6 mt-1 text-accent"/>
+                     <div>
+                        <h4 className="font-semibold">Immutable & Secure Records</h4>
+                        <p className="text-sm text-primary-foreground/70">All attendance records are permanent and tamper-proof, providing a reliable audit trail.</p>
+                    </div>
+                </li>
+            </ul>
+        </div>
+      </div>
+      <div className="flex items-center justify-center py-12">
+        <div className="mx-auto grid w-[350px] gap-6">
+            <div className="grid gap-2 text-center">
+                 <h1 className="text-3xl font-bold font-headline">Login to AttendSync</h1>
+                 <p className="text-balance text-muted-foreground">
+                    Enter your credentials to access your dashboard
+                 </p>
+            </div>
             <Tabs defaultValue="signin" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="signin">Sign In</TabsTrigger>
@@ -277,15 +183,24 @@ export default function LoginPage() {
                       onChange={(e) => setSignInEmail(e.target.value)}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="relative space-y-2">
                     <Label htmlFor="password-signin">Password</Label>
                     <Input
                       id="password-signin"
-                      type="password"
+                      type={showSignInPassword ? 'text' : 'password'}
                       required
                       value={signInPassword}
                       onChange={(e) => setSignInPassword(e.target.value)}
                     />
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-7 h-7 w-7"
+                        onClick={() => setShowSignInPassword(!showSignInPassword)}
+                    >
+                        {showSignInPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
                   </div>
                   <Button type="submit" className="w-full">
                     Sign In
@@ -341,15 +256,24 @@ export default function LoginPage() {
                       onChange={(e) => setSignUpEmail(e.target.value)}
                     />
                   </div>
-                  <div className="space-y-2">
+                   <div className="relative space-y-2">
                     <Label htmlFor="password-signup">Password</Label>
                     <Input
                       id="password-signup"
-                      type="password"
+                      type={showSignUpPassword ? 'text' : 'password'}
                       required
                       value={signUpPassword}
                       onChange={(e) => setSignUpPassword(e.target.value)}
                     />
+                     <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-7 h-7 w-7"
+                        onClick={() => setShowSignUpPassword(!showSignUpPassword)}
+                    >
+                        {showSignUpPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
                   </div>
                   <Button type="submit" className="w-full">
                     Create Account
@@ -357,9 +281,8 @@ export default function LoginPage() {
                 </form>
               </TabsContent>
             </Tabs>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
