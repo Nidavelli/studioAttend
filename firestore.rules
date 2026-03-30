@@ -51,16 +51,19 @@ service cloud.firestore {
           ||
           (resource.data.studentId == request.auth.uid);
 
-        // CREATE rule: A student can create an attendance record for themselves if they are enrolled in the unit
-        // and the session is valid. A lecturer can create a record on behalf of any student.
+        // CREATE: Students can only sign-in for an ACTIVE session.
+        // Lecturers can manually add attendance for any HISTORICAL session.
         allow create: if (
-                        request.auth != null &&
-                        request.resource.data.studentId == request.auth.uid && // Student signing in for themselves
-                        request.auth.uid in get(/databases/$(database)/documents/units/$(unitId)).data.enrolledStudents &&
-                        request.resource.data.sessionId in get(/databases/$(database)/documents/units/$(unitId)).data.sessionHistory
-                      ) || (
-                        isLecturerAndOwner(unitId) // Lecturer manual sign-in
-                      );
+            // STUDENT condition: Must be enrolled, signing in for self, and for the currently active session.
+            request.auth != null &&
+            request.resource.data.studentId == request.auth.uid &&
+            request.auth.uid in get(/databases/$(database)/documents/units/$(unitId)).data.enrolledStudents &&
+            request.resource.data.sessionId == get(/databases/$(database)/documents/units/$(unitId)).data.activeSessionId
+        ) || (
+            // LECTURER condition: Must be the owner and the session must exist in history.
+            isLecturerAndOwner(unitId) &&
+            request.resource.data.sessionId in get(/databases/$(database)/documents/units/$(unitId)).data.sessionHistory
+        );
         
         // Keep records immutable from updates, but allow deletion by owner.
         allow update: if false;
