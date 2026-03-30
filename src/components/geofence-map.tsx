@@ -30,8 +30,8 @@ export function GeofenceMap({
   const studentMarkerRef = useRef<L.Marker | null>(null);
   const circleRef = useRef<L.Circle | null>(null);
 
-  // Initialization effect (runs only once)
   useEffect(() => {
+    // Initialize map
     if (mapContainerRef.current && !mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, { scrollWheelZoom: false }).setView([center.lat, center.lng], 16);
       mapInstanceRef.current = map;
@@ -41,27 +41,14 @@ export function GeofenceMap({
       }).addTo(map);
     }
 
-    // Cleanup on unmount
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Update effect (runs when props change)
-  useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
     const centerPosition: LatLngExpression = [center.lat, center.lng];
 
-    // Update map view
+    // Update map view, marker, and circle
     map.setView(centerPosition, map.getZoom() || 16);
 
-    // Update lecturer marker
     if (lecturerMarkerRef.current) {
       lecturerMarkerRef.current.setLatLng(centerPosition);
     } else {
@@ -70,21 +57,20 @@ export function GeofenceMap({
         .bindPopup("Lecturer's Location");
     }
 
-    // Update circle
     if (circleRef.current) {
       circleRef.current.setLatLng(centerPosition);
       circleRef.current.setRadius(radius);
     } else {
       circleRef.current = L.circle(centerPosition, { radius, color: 'blue', fillColor: 'blue', fillOpacity: 0.2 }).addTo(map);
     }
-
+    
     // Update student marker
     if (studentLocation) {
       const studentPosition: LatLngExpression = [studentLocation.lat, studentLocation.lng];
       if (studentMarkerRef.current) {
         studentMarkerRef.current.setLatLng(studentPosition);
       } else {
-        studentMarkerRef.current = L.marker(studentPosition)
+        studentMarkerRef.current = L.marker(studentPosition, { icon: defaultIcon })
           .addTo(map)
           .bindPopup("Your Location");
       }
@@ -92,6 +78,18 @@ export function GeofenceMap({
       map.removeLayer(studentMarkerRef.current);
       studentMarkerRef.current = null;
     }
+    
+    // Cleanup on unmount
+    return () => {
+      if (mapInstanceRef.current) {
+        // This check is to ensure we don't call remove() on an unmounted map instance.
+        // It's a defensive check for React StrictMode, which can cause double-invokes.
+        if (mapContainerRef.current && mapInstanceRef.current.getContainer()) {
+             mapInstanceRef.current.remove();
+             mapInstanceRef.current = null;
+        }
+      }
+    };
   }, [center, radius, studentLocation]);
 
   return <div ref={mapContainerRef} style={{ height: '250px', width: '100%', borderRadius: '0.5rem' }} />;

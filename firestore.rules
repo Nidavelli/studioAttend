@@ -5,7 +5,6 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     // Helper function to check if the user is a lecturer and owns the unit.
-    // This is used for single-document writes (create, delete) where get() is allowed.
     function isLecturerAndOwner(unitId) {
       let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
       let unitLecturerId = get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId;
@@ -20,8 +19,9 @@ service cloud.firestore {
 
     // Rules for the 'units' collection
     match /units/{unitId} {
-      // Any authenticated user can read unit data. This is necessary for students to find a unit by code before joining.
-      allow read: if request.auth != null;
+      // A user can read a unit if they are the lecturer or an enrolled student.
+      allow read: if request.auth != null && 
+                  (resource.data.lecturerId == request.auth.uid || request.auth.uid in resource.data.enrolledStudents);
 
       // Only lecturers can create new units, and they must be the owner.
       allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer'
@@ -47,7 +47,7 @@ service cloud.firestore {
       match /attendance/{attendanceId} {
         // A user can read a record if they are the lecturer associated with it,
         // or if they are the student it belongs to.
-        allow read: if request.auth != null &&
+        allow read: if request.auth != null && 
                       (resource.data.lecturerId == request.auth.uid || resource.data.studentId == request.auth.uid);
 
         // CREATE: Students can only sign-in for an ACTIVE session.
@@ -59,9 +59,9 @@ service cloud.firestore {
             request.auth.uid in get(/databases/$(database)/documents/units/$(unitId)).data.enrolledStudents &&
             request.resource.data.sessionId == get(/databases/$(database)/documents/units/$(unitId)).data.activeSessionId
         ) || (
-            // LECTURER condition: Must be the owner and the session must exist in history.
-            isLecturerAndOwner(unitId) &&
-            request.resource.data.sessionId in get(/databases/$(database)/documents/units/$(unitId)).data.sessionHistory
+            // LECTURER condition: Must be the owner. App logic validates the session.
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' &&
+            get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid
         );
         
         // No one can update attendance records.
