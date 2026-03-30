@@ -20,8 +20,8 @@ service cloud.firestore {
 
     // Rules for the 'units' collection
     match /units/{unitId} {
-      // A user can read a unit if they are the lecturer or an enrolled student. This rule is compatible with queries.
-      allow read: if request.auth.uid == resource.data.lecturerId || request.auth.uid in resource.data.enrolledStudents;
+      // Any authenticated user can read unit data. This is necessary for students to find a unit by code before joining.
+      allow read: if request.auth != null;
 
       // Only lecturers can create new units, and they must be the owner.
       allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer'
@@ -45,10 +45,8 @@ service cloud.firestore {
 
       // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
-        // NEW READ RULE:
         // A user can read a record if they are the lecturer associated with it,
         // or if they are the student it belongs to.
-        // This rule IS compatible with collection queries because it only uses `resource.data`.
         allow read: if request.auth != null &&
                       (resource.data.lecturerId == request.auth.uid || resource.data.studentId == request.auth.uid);
 
