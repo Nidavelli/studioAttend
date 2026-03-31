@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from '@/hooks/use-toast';
 import { AttendSyncIcon } from '@/components/icons';
-import { GraduationCap, School, Eye, EyeOff, CheckCircle, MapPin, QrCode } from 'lucide-react';
+import { GraduationCap, School, Eye, EyeOff } from 'lucide-react';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/form";
 import { cn } from '@/lib/utils';
 import { generateAvatar } from '@/lib/avatars';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const signUpSchema = z.object({
   name: z.string().min(1, { message: "Full name is required." }),
@@ -232,56 +233,18 @@ function AuthPageContent() {
 
 
   return (
-    <div className="w-full min-h-screen lg:grid lg:grid-cols-2">
-      <div className="relative hidden flex-col bg-muted p-10 text-white lg:flex">
-        <div className="absolute inset-0 bg-primary" />
-        <div className="relative z-20 flex items-center text-lg font-medium">
-            <AttendSyncIcon className="h-8 w-8 mr-3" />
-            AttendSync
-        </div>
-        <div className="relative z-20 mt-auto">
-            <div className="space-y-2">
-                 <h2 className="text-4xl font-bold font-headline">Modernize Your Attendance Tracking</h2>
-                 <p className="text-primary-foreground/80">
-                    AttendSync replaces tedious manual attendance with a secure, real-time system, ensuring academic integrity and saving valuable class time.
-                 </p>
-            </div>
-        </div>
-         <div className="relative z-20 mt-10">
-            <h3 className="font-semibold mb-4 font-headline">Key Features:</h3>
-            <ul className="space-y-4">
-                <li className="flex items-start gap-3">
-                    <QrCode className="h-6 w-6 mt-1 text-accent"/>
-                    <div>
-                        <h4 className="font-semibold">Dynamic QR Attendance</h4>
-                        <p className="text-sm text-primary-foreground/70">Lecturers generate time-sensitive QR codes and PINs for secure, in-class verification.</p>
-                    </div>
-                </li>
-                <li className="flex items-start gap-3">
-                    <MapPin className="h-6 w-6 mt-1 text-accent"/>
-                     <div>
-                        <h4 className="font-semibold">Geofenced Location Verification</h4>
-                        <p className="text-sm text-primary-foreground/70">Ensure students are physically present with location-based sign-ins within a set radius.</p>
-                    </div>
-                </li>
-                <li className="flex items-start gap-3">
-                    <CheckCircle className="h-6 w-6 mt-1 text-accent"/>
-                     <div>
-                        <h4 className="font-semibold">Immutable & Secure Records</h4>
-                        <p className="text-sm text-primary-foreground/70">All attendance records are permanent and tamper-proof, providing a reliable audit trail.</p>
-                    </div>
-                </li>
-            </ul>
-        </div>
-      </div>
-      <div className="flex items-center justify-center py-12">
-        <div className="mx-auto grid w-[350px] gap-6">
-            <div className="grid gap-2 text-center">
-                 <h1 className="text-3xl font-bold font-headline">Welcome to AttendSync</h1>
-                 <p className="text-balance text-muted-foreground">
-                    Your modern attendance solution
-                 </p>
-            </div>
+    <div className="flex min-h-screen w-full items-center justify-center bg-muted/30 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 flex justify-center">
+            <AttendSyncIcon className="h-12 w-12 text-primary" />
+          </div>
+          <CardTitle className="font-headline text-3xl">
+            Welcome to AttendSync
+          </CardTitle>
+          <CardDescription>Your modern attendance solution</CardDescription>
+        </CardHeader>
+        <CardContent>
             <Tabs defaultValue="signin" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="signin">Sign In</TabsTrigger>
@@ -472,8 +435,8 @@ function AuthPageContent() {
                 </Form>
               </TabsContent>
             </Tabs>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

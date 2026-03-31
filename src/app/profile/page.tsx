@@ -5,7 +5,6 @@ import { useUserProfile } from '@/hooks/use-user-profile';
 import { useFirestore } from '@/firebase/provider';
 import { doc, updateDoc } from 'firebase/firestore';
 import { updateProfile as updateAuthProfile } from 'firebase/auth';
-import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,9 +16,10 @@ import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
-import { RefreshCw, User, Mail, GraduationCap, School, Hash } from 'lucide-react';
+import { RefreshCw, User, Mail, GraduationCap, School, Hash, ArrowLeft } from 'lucide-react';
 import { getAvatarUrl, generateAvatar } from '@/lib/avatars';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 const profileFormSchema = z.object({
   name: z.string().min(1, { message: "Full name is required." }),
@@ -93,7 +93,6 @@ export default function ProfilePage() {
   if (loading || !user) {
     return (
       <div className="flex flex-col min-h-screen bg-background">
-        <Header />
         <main className="flex-1 p-4 sm:p-6 lg:p-8 flex justify-center">
             <Card className="w-full max-w-2xl h-fit">
                 <CardHeader><Skeleton className="h-8 w-48" /></CardHeader>
@@ -119,12 +118,21 @@ export default function ProfilePage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <Header />
       <main className="flex-1 p-4 sm:p-6 lg:p-8 flex justify-center">
         <Card className="w-full max-w-2xl">
           <CardHeader>
-            <CardTitle className="font-headline text-3xl">My Profile</CardTitle>
-            <CardDescription>View and edit your personal information.</CardDescription>
+             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div>
+                <CardTitle className="font-headline text-3xl">My Profile</CardTitle>
+                <CardDescription>View and edit your personal information.</CardDescription>
+              </div>
+              <Button asChild variant="outline">
+                <Link href="/dashboard">
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Dashboard
+                </Link>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-8">
             <div className="flex flex-col items-center gap-4">

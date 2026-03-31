@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Header } from '@/components/header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -80,7 +79,6 @@ const faqItems = [
 export default function BlogPage() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <Header />
       <main className="flex-1">
         {/* Hero Section */}
         <section className="bg-muted py-20 md:py-32">
