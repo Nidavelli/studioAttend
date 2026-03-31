@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   signInWithEmailAndPassword,
@@ -17,6 +17,95 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from '@/hooks/use-toast';
 import { AttendSyncIcon } from '@/components/icons';
 import { GraduationCap, School, Eye, EyeOff, CheckCircle, MapPin, QrCode } from 'lucide-react';
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import zxcvbn from "zxcvbn";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { cn } from '@/lib/utils';
+
+const signUpSchema = z.object({
+  name: z.string().min(1, { message: "Full name is required." }),
+  email: z.string().email({ message: "Please enter a valid email." }),
+  role: z.enum(['student', 'lecturer'], { required_error: "You must select a role." }),
+  password: z.string()
+      .min(8, { message: "Password must be at least 8 characters long." })
+      .regex(/[A-Z]/, { message: "Must contain at least one uppercase letter." })
+      .regex(/[a-z]/, { message: "Must contain at least one lowercase letter." })
+      .regex(/[0-9]/, { message: "Must contain at least one number." }),
+  confirmPassword: z.string()
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords do not match.",
+  path: ["confirmPassword"],
+});
+
+
+const PasswordStrengthMeter = ({ password }: { password?: string }) => {
+    if (!password) {
+        return (
+             <div className="space-y-2">
+                <div className="w-full bg-muted rounded-full h-2">
+                    <div className="h-2 rounded-full" />
+                </div>
+                 <p className="text-xs text-muted-foreground">
+                    Password must be at least 8 characters and contain one uppercase, one lowercase and one number.
+                </p>
+            </div>
+        );
+    }
+    const result = zxcvbn(password);
+    const score = result.score; // 0, 1, 2, 3, 4
+
+    const getStrengthLabel = () => {
+        switch (score) {
+            case 0: return 'Very Weak';
+            case 1: return 'Weak';
+            case 2: return 'Fair';
+            case 3: return 'Strong';
+            case 4: return 'Very Strong';
+            default: return '';
+        }
+    };
+
+    const getBarColor = () => {
+        switch (score) {
+            case 0: return 'bg-destructive';
+            case 1: return 'bg-orange-500';
+            case 2: return 'bg-yellow-500';
+            case 3: return 'bg-green-400';
+            case 4: return 'bg-green-500';
+            default: return 'bg-muted';
+        }
+    };
+
+    return (
+        <div className="space-y-2">
+            <div className="w-full bg-muted rounded-full h-2">
+                <div
+                    className={cn("h-2 rounded-full transition-all duration-300", getBarColor())}
+                    style={{ width: `${(score + 1) * 20}%` }}
+                />
+            </div>
+            <div className="flex justify-between items-center text-xs">
+                <span className="font-medium text-muted-foreground">Strength: <span className="font-bold text-foreground">{getStrengthLabel()}</span></span>
+            </div>
+            {result.feedback.suggestions.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                    {result.feedback.suggestions.map((suggestion, index) => (
+                        <p key={index}>{suggestion}</p>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 
 export default function LoginPage() {
@@ -29,14 +118,20 @@ export default function LoginPage() {
   const [signInPassword, setSignInPassword] = useState('');
   const [showSignInPassword, setShowSignInPassword] = useState(false);
 
-
-  const [signUpName, setSignUpName] = useState('');
-  const [signUpEmail, setSignUpEmail] = useState('');
-  const [signUpPassword, setSignUpPassword] = useState('');
-  const [signUpConfirmPassword, setSignUpConfirmPassword] = useState('');
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
   const [showSignUpConfirmPassword, setShowSignUpConfirmPassword] = useState(false);
-  const [signUpRole, setSignUpRole] = useState('student');
+
+  const form = useForm<z.infer<typeof signUpSchema>>({
+    resolver: zodResolver(signUpSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+      role: "student",
+    },
+  });
+  const watchedPassword = form.watch("password");
 
   const handleLoginSuccess = (user: any) => {
     toast({
@@ -84,21 +179,10 @@ export default function LoginPage() {
     }
   };
 
-  const handleEmailSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (signUpPassword !== signUpConfirmPassword) {
-      toast({
-        variant: 'destructive',
-        title: 'Passwords Do Not Match',
-        description: 'Please ensure both password fields are identical.',
-      });
-      return;
-    }
-    
+  const handleEmailSignUp = async (values: z.infer<typeof signUpSchema>) => {
     let userCredential;
     try {
-      userCredential = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
+      userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
     } catch (error) {
       handleAuthError(error);
       return;
@@ -106,14 +190,14 @@ export default function LoginPage() {
 
     try {
       const user = userCredential.user;
-      await updateProfile(user, { displayName: signUpName });
+      await updateProfile(user, { displayName: values.name });
 
       const userDocRef = doc(firestore, 'users', user.uid);
       await setDoc(userDocRef, {
         uid: user.uid,
-        name: signUpName,
-        email: signUpEmail,
-        role: signUpRole,
+        name: values.name,
+        email: values.email,
+        role: values.role,
       });
 
       await user.reload();
@@ -229,99 +313,132 @@ export default function LoginPage() {
                 <div className="grid gap-2 text-center pt-4">
                      <h2 className="text-xl font-bold">Create your AttendSync Account</h2>
                 </div>
-                <form onSubmit={handleEmailSignUp} className="space-y-4 pt-4">
-                   <div className="space-y-2">
-                    <Label>Your Role</Label>
-                    <RadioGroup defaultValue="student" className="grid grid-cols-2 gap-4" onValueChange={setSignUpRole}>
-                      <div>
-                        <RadioGroupItem value="student" id="r1" className="peer sr-only" />
-                        <Label
-                          htmlFor="r1"
-                          className="flex items-center justify-center gap-2 rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                        >
-                          <GraduationCap className="h-5 w-5" />
-                          Student
-                        </Label>
-                      </div>
-                      <div>
-                        <RadioGroupItem value="lecturer" id="r2" className="peer sr-only" />
-                        <Label
-                          htmlFor="r2"
-                          className="flex items-center justify-center gap-2 rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                        >
-                           <School className="h-5 w-5" />
-                          Lecturer
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="name-signup">Full Name</Label>
-                    <Input
-                      id="name-signup"
-                      type="text"
-                      placeholder="John Doe"
-                      required
-                      value={signUpName}
-                      onChange={(e) => setSignUpName(e.target.value)}
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(handleEmailSignUp)} className="space-y-4 pt-4">
+                    <FormField
+                      control={form.control}
+                      name="role"
+                      render={({ field }) => (
+                        <FormItem className="space-y-2">
+                          <FormLabel>Your Role</FormLabel>
+                          <FormControl>
+                            <RadioGroup
+                              onValueChange={field.onChange}
+                              defaultValue={field.value}
+                              className="grid grid-cols-2 gap-4"
+                            >
+                              <FormItem>
+                                <FormControl>
+                                  <RadioGroupItem value="student" id="r1" className="peer sr-only" />
+                                </FormControl>
+                                <Label
+                                  htmlFor="r1"
+                                  className="flex items-center justify-center gap-2 rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                                >
+                                  <GraduationCap className="h-5 w-5" />
+                                  Student
+                                </Label>
+                              </FormItem>
+                              <FormItem>
+                                <FormControl>
+                                  <RadioGroupItem value="lecturer" id="r2" className="peer sr-only" />
+                                </FormControl>
+                                <Label
+                                  htmlFor="r2"
+                                  className="flex items-center justify-center gap-2 rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                                >
+                                  <School className="h-5 w-5" />
+                                  Lecturer
+                                </Label>
+                              </FormItem>
+                            </RadioGroup>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email-signup">Email</Label>
-                    <Input
-                      id="email-signup"
-                      type="email"
-                      placeholder="m@example.com"
-                      required
-                      value={signUpEmail}
-                      onChange={(e) => setSignUpEmail(e.target.value)}
+                     <FormField
+                      control={form.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Full Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="John Doe" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
-                  </div>
-                   <div className="relative space-y-2">
-                    <Label htmlFor="password-signup">Password</Label>
-                    <Input
-                      id="password-signup"
-                      type={showSignUpPassword ? 'text' : 'password'}
-                      required
-                      value={signUpPassword}
-                      onChange={(e) => setSignUpPassword(e.target.value)}
+                    <FormField
+                      control={form.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="m@example.com" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
-                     <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-1 top-7 h-7 w-7"
-                        onClick={() => setShowSignUpPassword(!showSignUpPassword)}
-                    >
-                        {showSignUpPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <FormField
+                      control={form.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                               <Input type={showSignUpPassword ? 'text' : 'password'} {...field} />
+                               <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                                  onClick={() => setShowSignUpPassword(!showSignUpPassword)}
+                                >
+                                  {showSignUpPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </Button>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                     <FormField
+                      control={form.control}
+                      name="confirmPassword"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Confirm Password</FormLabel>
+                          <FormControl>
+                             <div className="relative">
+                                <Input type={showSignUpConfirmPassword ? 'text' : 'password'} {...field} />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                                  onClick={() => setShowSignUpConfirmPassword(!showSignUpConfirmPassword)}
+                                >
+                                  {showSignUpConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </Button>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <PasswordStrengthMeter password={watchedPassword} />
+                    
+                    <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
+                      Create Account
                     </Button>
-                  </div>
-                   <div className="relative space-y-2">
-                    <Label htmlFor="password-confirm-signup">Confirm Password</Label>
-                    <Input
-                      id="password-confirm-signup"
-                      type={showSignUpConfirmPassword ? 'text' : 'password'}
-                      required
-                      value={signUpConfirmPassword}
-                      onChange={(e) => setSignUpConfirmPassword(e.target.value)}
-                    />
-                     <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-1 top-7 h-7 w-7"
-                        onClick={() => setShowSignUpConfirmPassword(!showSignUpConfirmPassword)}
-                    >
-                        {showSignUpConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                   <p className="text-xs text-muted-foreground">
-                      Password must be at least 8 characters and contain one number and one special character.
-                    </p>
-                  <Button type="submit" className="w-full">
-                    Create Account
-                  </Button>
-                </form>
+                  </form>
+                </Form>
               </TabsContent>
             </Tabs>
         </div>
