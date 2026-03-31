@@ -36,6 +36,7 @@ const signUpSchema = z.object({
   name: z.string().min(1, { message: "Full name is required." }),
   email: z.string().email({ message: "Please enter a valid email." }),
   role: z.enum(['student', 'lecturer'], { required_error: "You must select a role." }),
+  registrationNumber: z.string().min(3, "Registration number is required").max(20, "Registration number must be 20 characters or less."),
   password: z.string()
       .min(8, { message: "Password must be at least 8 characters long." })
       .regex(/[A-Z]/, { message: "Must contain at least one uppercase letter." })
@@ -130,6 +131,7 @@ export default function LoginPage() {
       password: "",
       confirmPassword: "",
       role: "student",
+      registrationNumber: "",
     },
   });
   const watchedPassword = form.watch("password");
@@ -201,6 +203,7 @@ export default function LoginPage() {
         name: values.name,
         email: values.email,
         role: values.role,
+        registrationNumber: values.registrationNumber,
         avatarStyle: style,
         avatarSeed: seed,
       });
@@ -370,6 +373,19 @@ export default function LoginPage() {
                           <FormLabel>Full Name</FormLabel>
                           <FormControl>
                             <Input placeholder="John Doe" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="registrationNumber"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Registration Number</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g. PA106/G/17469/26" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

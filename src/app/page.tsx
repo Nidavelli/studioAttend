@@ -48,6 +48,7 @@ async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise
         name: data.name,
         email: data.email,
         role: data.role,
+        registrationNumber: data.registrationNumber,
         avatarStyle: data.avatarStyle,
         avatarSeed: data.avatarSeed,
       });
@@ -152,7 +153,6 @@ export default function Home() {
         if (fetchedUnits.length > 0 && !selectedUnitId) {
             setSelectedUnitId(fetchedUnits[0].id);
         } else if (fetchedUnits.length === 0) {
-            setSelectedUnitId(null);
             setIsDataLoading(false); // No units, so we are done loading.
         }
     }, (error) => {
@@ -373,6 +373,18 @@ export default function Home() {
             return { success: false, deviceWarning: false };
         }
 
+        const userDocRef = doc(firestore, 'users', studentId);
+        const userDoc = await getDoc(userDocRef);
+        if (!userDoc.exists()) {
+            toast({ variant: "destructive", title: "Sign-In Failed", description: "System error: Your user profile could not be found." });
+            return { success: false, deviceWarning: false };
+        }
+        const registrationNumber = userDoc.data().registrationNumber;
+        if (!registrationNumber) {
+             toast({ variant: "destructive", title: "Sign-In Failed", description: "System error: Your registration number is missing." });
+            return { success: false, deviceWarning: false };
+        }
+
         const attendanceColRef = collection(firestore, `units/${unitId}/attendance`);
 
         const studentQuery = query(attendanceColRef, where("studentId", "==", studentId), where("sessionId", "==", sessionId));
@@ -392,6 +404,7 @@ export default function Home() {
         try {
             const newRecord: Partial<AttendanceRecord> = {
                 studentId,
+                registrationNumber,
                 sessionId,
                 lecturerId,
                 timestamp: serverTimestamp(),
@@ -497,6 +510,7 @@ export default function Home() {
 
     await addDoc(attendanceColRef, {
         studentId: studentId,
+        registrationNumber: student.registrationNumber,
         sessionId: sessionId,
         lecturerId: lecturerId,
         timestamp: serverTimestamp(),

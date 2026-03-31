@@ -69,6 +69,7 @@ export function AttendanceReport({
             <TableHeader>
               <TableRow>
                 <TableHead>Student Name</TableHead>
+                <TableHead>Reg. Number</TableHead>
                 {sessionHeaders.map((_, i) => (
                   <TableHead key={`session-header-${i + 1}`} className="text-center">
                     S{i + 1}
@@ -80,6 +81,7 @@ export function AttendanceReport({
               {students.map((student) => (
                 <TableRow key={student.uid}>
                   <TableCell className="font-medium">{student.name}</TableCell>
+                  <TableCell className="font-mono text-xs">{student.registrationNumber}</TableCell>
                   {sessionHeaders.map((sessionId) => {
                     const isPresent = attendanceRecords.some(
                       record => record.studentId === student.uid && record.sessionId === sessionId

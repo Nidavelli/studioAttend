@@ -4,6 +4,7 @@ export type Student = {
   name: string;
   email: string;
   role: 'student' | 'lecturer';
+  registrationNumber: string;
   avatarStyle?: string;
   avatarSeed?: string;
 };
@@ -25,6 +26,7 @@ export type Unit = {
 export type AttendanceRecord = {
   id: string; // Firestore document ID
   studentId: string;
+  registrationNumber: string;
   sessionId: string;
   lecturerId: string; // Denormalized for security rules
   timestamp: any; // Firestore Timestamp

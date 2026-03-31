@@ -9,6 +9,7 @@ import type { User as AuthUser } from 'firebase/auth';
 export interface UserProfile extends AuthUser {
   name: string;
   role: 'student' | 'lecturer';
+  registrationNumber: string;
   avatarStyle?: string;
   avatarSeed?: string;
 }
@@ -40,6 +41,7 @@ export function useUserProfile() {
           name: profileData.name,
           email: authUser.email!,
           role: profileData.role,
+          registrationNumber: profileData.registrationNumber,
           avatarStyle: profileData.avatarStyle,
           avatarSeed: profileData.avatarSeed,
         });
@@ -49,6 +51,7 @@ export function useUserProfile() {
           name: authUser.displayName!,
           email: authUser.email!,
           role: 'student',
+          registrationNumber: '',
         });
       }
       setLoading(false);
@@ -59,6 +62,7 @@ export function useUserProfile() {
         name: authUser.displayName!,
         email: authUser.email!,
         role: 'student',
+        registrationNumber: '',
       });
       setLoading(false);
     });

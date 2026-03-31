@@ -17,7 +17,7 @@ import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
-import { RefreshCw, User, Mail, GraduationCap, School } from 'lucide-react';
+import { RefreshCw, User, Mail, GraduationCap, School, Hash } from 'lucide-react';
 import { getAvatarUrl, generateAvatar } from '@/lib/avatars';
 import { useRouter } from 'next/navigation';
 
@@ -161,6 +161,11 @@ export default function ProfilePage() {
                 <div className="space-y-2">
                     <Label className="flex items-center gap-2"><Mail /> Email Address</Label>
                     <Input value={user.email || ''} readOnly disabled />
+                </div>
+
+                <div className="space-y-2">
+                    <Label className="flex items-center gap-2"><Hash /> Registration Number</Label>
+                    <Input value={user.registrationNumber || ''} readOnly disabled />
                 </div>
                 
                  <div className="space-y-2">
