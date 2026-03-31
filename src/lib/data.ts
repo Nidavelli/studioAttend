@@ -36,6 +36,10 @@ export type AttendanceRecord = {
   lecturerId: string; // Denormalized for security rules
   timestamp: any; // Firestore Timestamp
   signInMethod: 'location' | 'qr_code' | 'manual';
+  deviceId: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  deviceFlag: boolean;
+  location?: { lat: number, lng: number, accuracy: number };
 };
 
 // A helper type for the student dashboard to combine unit data

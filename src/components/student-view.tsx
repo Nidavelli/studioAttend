@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Loader2, CheckCircle, XCircle, AlertTriangle, QrCode, Pin, MapPin, PlusCircle, Sparkles, BookOpen } from 'lucide-react';
 import type { UnitWithAttendance, AttendanceRecord } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
@@ -109,12 +110,18 @@ function UnitCard({
   onSignIn: (unitId: string) => void,
   onViewAttendance: (unit: UnitWithAttendance) => void,
 }) {
+  const approvedAttendanceRecords = unit.sessionHistory?.filter(sessionId =>
+      unit.attendedSessionsCount > 0
+  ) || [];
+
   const totalSessions = unit.sessionHistory?.length || 0;
   const percentage = totalSessions > 0 ? Math.round((unit.attendedSessionsCount / totalSessions) * 100) : 0;
   const isAtRisk = percentage < unit.attendanceThreshold;
 
   const getButtonContent = () => {
     switch (status) {
+        case 'signed_in':
+            return 'Signed In';
         case 'active':
             return (
                 <>
@@ -174,12 +181,14 @@ export function StudentView({
   onLocationSignIn,
   onQrSignIn,
   user,
+  attendanceRecords,
 }: {
   units: UnitWithAttendance[];
   unitStatuses: Record<string, UnitStatus>;
-  onLocationSignIn: (unitId: string, studentId: string, location: GeolocationCoordinates, deviceId: string) => Promise<{ success: boolean, distance?: number }>;
-  onQrSignIn: (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Promise<{ success: boolean }>;
+  onLocationSignIn: (unitId: string, studentId: string, location: GeolocationCoordinates, deviceId: string) => Promise<{ success: boolean; deviceWarning: boolean; distance?: number }>;
+  onQrSignIn: (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string) => Promise<{ success: boolean; deviceWarning: boolean }>;
   user: User;
+  attendanceRecords: AttendanceRecord[];
 }) {
   const firestore = useFirestore();
   const [signInStep, setSignInStep] = useState<SignInStep>('idle');
@@ -200,6 +209,8 @@ export function StudentView({
   const [viewingAttendanceRecords, setViewingAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [isLoadingAttendance, setIsLoadingAttendance] = useState(false);
   const [locationErrorContext, setLocationErrorContext] = useState<LocationErrorContext>(null);
+
+  const [isWarningDialogOpen, setIsWarningDialogOpen] = useState(false);
 
   useEffect(() => {
     setDeviceId(generateSimpleId());
@@ -276,7 +287,6 @@ export function StudentView({
     setPin('');
     setSignInError(null);
     setQrData(null);
-    if(signingInUnitId) setSigningInUnitId(null);
     setShowConfetti(false);
     setLocationErrorContext(null);
   };
@@ -291,21 +301,29 @@ export function StudentView({
     setViewingAttendanceUnit(unit);
   };
 
-  const recordQrAttendance = async () => {
-    if (!user || !qrData || !signingInUnitId) return;
-    setSignInStep('recording');
-    const { success } = await onQrSignIn(signingInUnitId, user.uid, deviceId!, pin, qrData.sessionId);
-    if (success) {
-      setShowConfetti(true);
-      setSignInStep('success');
-    } else {
-      setSignInError({ title: "Sign-in Failed", description: "The PIN was incorrect, session expired, or you already signed in." });
-      setSignInStep('error');
-    }
-  };
+    const handleSuccessfulSignIn = (deviceWarning: boolean) => {
+        if (deviceWarning) {
+            setIsWarningDialogOpen(true);
+        } else {
+            setShowConfetti(true);
+            setSignInStep('success');
+        }
+    };
+
+    const recordQrAttendance = async () => {
+        if (!user || !qrData || !signingInUnitId || !deviceId) return;
+        setSignInStep('recording');
+        const { success, deviceWarning } = await onQrSignIn(signingInUnitId, user.uid, deviceId, pin, qrData.sessionId);
+        if (success) {
+            handleSuccessfulSignIn(deviceWarning);
+        } else {
+            setSignInError({ title: "Sign-in Failed", description: "The PIN was incorrect, session expired, or you already signed in." });
+            setSignInStep('error');
+        }
+    };
   
   const handleLocationAuth = () => {
-    if (!user || !signingInUnitId) return;
+    if (!user || !signingInUnitId || !deviceId) return;
     setSignInStep('locating');
     if (!navigator.geolocation) {
       setSignInError({ title: "Location Not Supported", description: "Your browser does not support geolocation. Please use the QR code method." });
@@ -322,11 +340,10 @@ export function StudentView({
         };
         setSignInStep('recording');
         
-        const { success, distance } = await onLocationSignIn(signingInUnitId, user.uid, studentLocation, deviceId!);
+        const { success, deviceWarning, distance } = await onLocationSignIn(signingInUnitId, user.uid, studentLocation, deviceId);
         
         if (success) {
-          setShowConfetti(true);
-          setSignInStep('success');
+            handleSuccessfulSignIn(deviceWarning);
         } else {
           if (distance) {
               const unit = units.find(u => u.id === signingInUnitId);
@@ -427,7 +444,7 @@ export function StudentView({
         return (
           <form onSubmit={handleSubmitPin} className="flex flex-col items-center gap-4 w-full">
             <Pin className="h-8 w-8 text-primary" />
-            <p className="text-muted-foreground text-center">Enter the 4-digit PIN.</p>
+            <p className="text-muted-foreground text-center">Enter the 4-digit PIN shown on the lecturer's screen.</p>
             <Input type="number" value={pin} onChange={(e) => setPin(e.target.value)} className="text-center text-2xl font-mono tracking-widest h-14" maxLength={4} required autoFocus />
             <div className="flex gap-2 w-full"><Button type="button" variant="outline" onClick={() => setSignInStep('scanning')} className="w-full">Back</Button><Button type="submit" className="w-full">Submit</Button></div>
           </form>
@@ -450,6 +467,27 @@ export function StudentView({
   return (
     <div className="space-y-6">
         {showConfetti && <Confetti width={width} height={height} recycle={false} onConfettiComplete={() => setShowConfetti(false)} />}
+        
+        <AlertDialog open={isWarningDialogOpen} onOpenChange={setIsWarningDialogOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2"><AlertTriangle className="text-amber-500" /> Device Sharing Detected</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This device has already been used to sign in for this session. If you are sharing a device, please be aware that your attendance will be reviewed by the lecturer.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogAction onClick={() => {
+                        setShowConfetti(true);
+                        setSignInStep('success');
+                        setIsWarningDialogOpen(false);
+                    }}>
+                        Acknowledge & Proceed
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
         <Card>
             <CardHeader>
                 <CardTitle className="font-headline">Join a New Unit</CardTitle>
@@ -493,7 +531,10 @@ export function StudentView({
           <DialogHeader>
             <DialogTitle>Student Sign-In</DialogTitle>
             <DialogDescription>
-              Choose a method to verify your attendance or follow the on-screen instructions.
+              {signInStep === 'methodChoice'
+                  ? "Choose a method to verify your attendance."
+                  : "Follow the on-screen instructions."
+              }
             </DialogDescription>
           </DialogHeader>
           {renderSignInContent()}
@@ -521,7 +562,7 @@ export function StudentView({
             <StudentAttendanceGrid 
               unit={viewingAttendanceUnit} 
               studentId={user.uid}
-              attendanceRecords={viewingAttendanceRecords}
+              attendanceRecords={attendanceRecords.filter(r => r.studentId === user.uid)}
             />
           ) : null}
         </DialogContent>

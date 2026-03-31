@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import QRCode from "react-qr-code";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -10,11 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { Student, Unit, AttendanceRecord } from '@/lib/data';
-import type { SignedInStudent } from '@/app/page';
 import { findImage } from '@/lib/data';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle, Trash2 } from 'lucide-react';
+import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle, Trash2, Check, X, AlertTriangle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import type { GeolocationCoordinates } from '@/app/page';
@@ -27,7 +26,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { createUnit } from '@/lib/units';
 import type { User } from 'firebase/auth';
 import { Skeleton } from './ui/skeleton';
-import { Checkbox } from './ui/checkbox';
+import { Badge } from './ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -237,7 +236,6 @@ export function LecturerDashboard({
   allUnits,
   students,
   unit,
-  liveLedgerStudents,
   attendanceRecords,
   isSessionActive,
   onToggleSession,
@@ -252,13 +250,12 @@ export function LecturerDashboard({
   setRadius,
   onManualSignIn,
   onDeleteUnit,
-  onDeleteAttendanceRecords,
+  onUpdateAttendanceStatus,
 }: {
   lecturer: User;
   allUnits: Unit[];
   students: Student[];
   unit: Unit;
-  liveLedgerStudents: SignedInStudent[];
   attendanceRecords: AttendanceRecord[];
   isSessionActive: boolean;
   onToggleSession: () => void;
@@ -273,12 +270,11 @@ export function LecturerDashboard({
   setRadius: (radius: number) => void;
   onManualSignIn: (studentId: string, sessionId: string) => void;
   onDeleteUnit: (unitId: string) => void;
-  onDeleteAttendanceRecords: (recordIds: string[]) => void;
+  onUpdateAttendanceStatus: (recordId: string, status: 'APPROVED' | 'REJECTED') => void;
 }) {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isCopied, setIsCopied] = React.useState(false);
   const { toast } = useToast();
-  const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
 
   const handleSetLocation = () => {
     setIsGettingLocation(true);
@@ -293,11 +289,12 @@ export function LecturerDashboard({
     }
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        const accuracy = Math.round(position.coords.accuracy);
         setLecturerLocation({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
+          accuracy: accuracy,
         });
-        const accuracy = Math.round(position.coords.accuracy);
         toast({
             title: "Location Set",
             description: `Your location has been set with an accuracy of ~${accuracy} meters.`,
@@ -322,27 +319,6 @@ export function LecturerDashboard({
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
-  
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-        setSelectedRecords(liveLedgerStudents.map(s => s.recordId));
-    } else {
-        setSelectedRecords([]);
-    }
-  }
-
-  const handleRecordSelect = (recordId: string, checked: boolean) => {
-    if (checked) {
-        setSelectedRecords(prev => [...prev, recordId]);
-    } else {
-        setSelectedRecords(prev => prev.filter(id => id !== recordId));
-    }
-  }
-
-  const handleDeleteSelected = () => {
-    onDeleteAttendanceRecords(selectedRecords);
-    setSelectedRecords([]);
-  }
 
   if (!unit) {
     return (
@@ -351,17 +327,69 @@ export function LecturerDashboard({
       </div>
     );
   }
+  
+    const sessionAttendanceRecords = useMemo(() => 
+        attendanceRecords
+            .filter(r => r.sessionId === activeSessionId)
+            .sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0)),
+        [attendanceRecords, activeSessionId]
+    );
+
+    const { flaggedDeviceGroups, singleDeviceRecords } = useMemo(() => {
+        if (!isSessionActive) return { flaggedDeviceGroups: [], singleDeviceRecords: [] };
+
+        const groupedByDevice = sessionAttendanceRecords.reduce((acc, record) => {
+            const key = record.deviceId;
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(record);
+            return acc;
+        }, {} as Record<string, AttendanceRecord[]>);
+        
+        const flagged = Object.values(groupedByDevice).filter(records => records.length > 1);
+        const single = Object.values(groupedByDevice).filter(records => records.length === 1).flatMap(records => records);
+        
+        return { flaggedDeviceGroups: flagged, singleDeviceRecords: single };
+
+    }, [isSessionActive, sessionAttendanceRecords]);
 
   const qrCodeValue = isSessionActive ? JSON.stringify({ unitId: unit.id, sessionId: activeSessionId }) : '';
+
+  const StatusBadge = ({ status }: { status: AttendanceRecord['status'] }) => {
+    const variant = {
+        'PENDING': 'default',
+        'APPROVED': 'secondary',
+        'REJECTED': 'destructive',
+    }[status];
+    const text = {
+        'PENDING': 'Pending Review',
+        'APPROVED': 'Approved',
+        'REJECTED': 'Rejected',
+    }[status];
+    return <Badge variant={variant as any}>{text}</Badge>
+  }
+  
+  const ActionButtons = ({ record }: { record: AttendanceRecord }) => {
+    if (record.status !== 'PENDING') return null;
+    return (
+      <div className="flex gap-2">
+        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onUpdateAttendanceStatus(record.id, 'APPROVED')}>
+            <Check className="h-4 w-4 text-green-600"/>
+        </Button>
+        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onUpdateAttendanceStatus(record.id, 'REJECTED')}>
+            <X className="h-4 w-4 text-red-600"/>
+        </Button>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6 mt-4 md:mt-8">
     <Tabs defaultValue="session">
         <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="session">Session</TabsTrigger>
+            <TabsTrigger value="session">Session Control</TabsTrigger>
+            <TabsTrigger value="review">Session Review</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="grid">Attendance Grid</TabsTrigger>
-            <TabsTrigger value="management">Unit Management</TabsTrigger>
         </TabsList>
         <TabsContent value="session" className="mt-6">
             <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
@@ -490,106 +518,75 @@ export function LecturerDashboard({
                     )}
                     </CardContent>
                 </Card>
-
-                <Card className="lg:col-span-3">
-                    <CardHeader>
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <CardTitle className="font-headline">Live Attendance Ledger</CardTitle>
-                                <CardDescription>Students who have signed in for the current session.</CardDescription>
-                            </div>
-                            {selectedRecords.length > 0 && (
-                                <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                        <Button variant="destructive" size="sm">
-                                            <Trash2 className="mr-2 h-4 w-4"/> Remove Selected ({selectedRecords.length})
-                                        </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                            <AlertDialogDescription>
-                                                This will permanently remove {selectedRecords.length} attendance record(s).
-                                                This action cannot be undone.
-                                            </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction onClick={handleDeleteSelected}>Continue</AlertDialogAction>
-                                        </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                </AlertDialog>
-                            )}
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                    <div className="max-h-80 overflow-y-auto">
-                        <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead padding="checkbox" className="w-12">
-                                    <Checkbox
-                                        checked={selectedRecords.length === liveLedgerStudents.length && liveLedgerStudents.length > 0}
-                                        onCheckedChange={(checked) => handleSelectAll(Boolean(checked))}
-                                        aria-label="Select all"
-                                        disabled={!isSessionActive}
-                                    />
-                                </TableHead>
-                                <TableHead>Student</TableHead>
-                                <TableHead>Sign-in Time</TableHead>
-                                <TableHead className="text-right">Action</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {liveLedgerStudents.length > 0 ? (
-                            liveLedgerStudents.map((student) => {
-                                const avatar = findImage(student.avatarId);
-                                const isSelected = selectedRecords.includes(student.recordId);
-                                return (
-                                <TableRow key={student.id} data-state={isSelected ? "selected" : ""}>
-                                    <TableCell padding="checkbox">
-                                        <Checkbox
-                                            checked={isSelected}
-                                            onCheckedChange={(checked) => handleRecordSelect(student.recordId, Boolean(checked))}
-                                            aria-label={`Select ${student.name}`}
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                    <div className="flex items-center gap-3">
-                                        <Avatar>
-                                        <AvatarImage src={avatar?.imageUrl} alt={student.name} data-ai-hint={avatar?.imageHint}/>
-                                        <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
-                                        </Avatar>
-                                        <span className="font-medium">{student.name}</span>
-                                    </div>
-                                    </TableCell>
-                                    <TableCell className="font-mono">{student.signedInAt}</TableCell>
-                                    <TableCell className="text-right">
-                                        <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            onClick={() => onDeleteAttendanceRecords([student.recordId])}
-                                            className="text-muted-foreground hover:text-destructive"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                                );
-                            })
-                            ) : (
-                            <TableRow>
-                                <TableCell colSpan={4} className="text-center text-muted-foreground h-24">
-                                {isSessionActive ? 'Waiting for students to sign in...' : 'Session has not started.'}
-                                </TableCell>
-                            </TableRow>
-                            )}
-                        </TableBody>
-                        </Table>
-                    </div>
-                    </CardContent>
-                </Card>
             </div>
+        </TabsContent>
+        <TabsContent value="review" className="mt-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="font-headline">Session Review</CardTitle>
+                    <CardDescription>Review and approve/reject attendance submissions for the current session.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                   {isSessionActive ? (
+                    <>
+                    {flaggedDeviceGroups.map((records, index) => (
+                        <Card key={index} className="bg-amber-50 border-amber-200">
+                             <CardHeader>
+                                <CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="text-amber-600"/> Device Sharing Flagged</CardTitle>
+                                <CardDescription>Device ID: <span className="font-mono text-xs">{records[0].deviceId}</span></CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Table>
+                                    <TableHeader><TableRow><TableHead>Student</TableHead><TableHead>Time</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                                    <TableBody>
+                                        {records.map(record => {
+                                            const student = students.find(s => s.uid === record.studentId);
+                                            return (
+                                                <TableRow key={record.id}>
+                                                    <TableCell>{student?.name || 'Unknown'}</TableCell>
+                                                    <TableCell className="font-mono text-xs">{record.timestamp?.toDate().toLocaleTimeString()}</TableCell>
+                                                    <TableCell><StatusBadge status={record.status} /></TableCell>
+                                                    <TableCell className="text-right"><ActionButtons record={record} /></TableCell>
+                                                </TableRow>
+                                            )
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </CardContent>
+                        </Card>
+                    ))}
+
+                    <Card>
+                        <CardHeader><CardTitle className="text-base">Individual Sign-ins</CardTitle></CardHeader>
+                        <CardContent>
+                            <Table>
+                                <TableHeader><TableRow><TableHead>Student</TableHead><TableHead>Time</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                                <TableBody>
+                                {singleDeviceRecords.length > 0 ? singleDeviceRecords.map(record => {
+                                     const student = students.find(s => s.uid === record.studentId);
+                                     return (
+                                        <TableRow key={record.id}>
+                                            <TableCell>{student?.name || 'Unknown'}</TableCell>
+                                            <TableCell className="font-mono text-xs">{record.timestamp?.toDate().toLocaleTimeString()}</TableCell>
+                                            <TableCell><StatusBadge status={record.status} /></TableCell>
+                                            <TableCell className="text-right"><ActionButtons record={record} /></TableCell>
+                                        </TableRow>
+                                    )
+                                }) : (
+                                    <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground">Waiting for sign-ins...</TableCell></TableRow>
+                                )}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                    </>
+                   ) : (
+                    <div className="text-center text-muted-foreground h-48 flex flex-col justify-center items-center">
+                        <p>Start a session to review attendance.</p>
+                    </div>
+                   )}
+                </CardContent>
+            </Card>
         </TabsContent>
         <TabsContent value="analytics" className="mt-6">
             <Card>
@@ -620,7 +617,7 @@ export function LecturerDashboard({
             </Card>
         </TabsContent>
         <TabsContent value="management" className="mt-6">
-            <UnitManagementTab allUnits={allUnits} lecturer={lecturer} onDeleteUnit={onDeleteUnit} />
+             <UnitManagementTab allUnits={allUnits} lecturer={lecturer} onDeleteUnit={onDeleteUnit} />
         </TabsContent>
     </Tabs>
     </div>

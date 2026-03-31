@@ -19,9 +19,8 @@ service cloud.firestore {
 
     // Rules for the 'units' collection
     match /units/{unitId} {
-      // A user can read a unit if they are the lecturer or an enrolled student.
-      allow read: if request.auth != null && 
-                  (resource.data.lecturerId == request.auth.uid || request.auth.uid in resource.data.enrolledStudents);
+      // Any authenticated user can read unit data (needed for students to join by code).
+      allow read: if request.auth != null;
 
       // Only lecturers can create new units, and they must be the owner.
       allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer'
@@ -45,27 +44,31 @@ service cloud.firestore {
 
       // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
-        // A user can read a record if they are the lecturer associated with it,
-        // or if they are the student it belongs to.
+        // A lecturer can read all records for their unit.
+        // A student can read their own records.
         allow read: if request.auth != null && 
-                      (resource.data.lecturerId == request.auth.uid || resource.data.studentId == request.auth.uid);
+                      (get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid || 
+                       resource.data.studentId == request.auth.uid);
 
-        // CREATE: Students can only sign-in for an ACTIVE session.
-        // Lecturers can manually add attendance for any HISTORICAL session.
+        // CREATE: Students can create a PENDING record for an ACTIVE session.
+        // Lecturers can manually add a PENDING record.
         allow create: if (
-            // STUDENT condition: Must be enrolled, signing in for self, and for the currently active session.
+            // STUDENT condition
             request.auth != null &&
             request.resource.data.studentId == request.auth.uid &&
             request.auth.uid in get(/databases/$(database)/documents/units/$(unitId)).data.enrolledStudents &&
-            request.resource.data.sessionId == get(/databases/$(database)/documents/units/$(unitId)).data.activeSessionId
+            request.resource.data.sessionId == get(/databases/$(database)/documents/units/$(unitId)).data.activeSessionId &&
+            request.resource.data.status == 'PENDING'
         ) || (
-            // LECTURER condition: Must be the owner. App logic validates the session.
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer' &&
-            get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid
+            // LECTURER condition for manual sign-in
+            isLecturerAndOwner(unitId) && request.resource.data.signInMethod == 'manual'
         );
         
-        // No one can update attendance records.
-        allow update: if false;
+        // UPDATE: Only a lecturer can update the status from PENDING to APPROVED/REJECTED.
+        allow update: if isLecturerAndOwner(unitId) &&
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+                   resource.data.status == 'PENDING' &&
+                   request.resource.data.status in ['APPROVED', 'REJECTED'];
         
         // Lecturers can delete records from their own unit.
         allow delete: if isLecturerAndOwner(unitId);

@@ -31,7 +31,7 @@ export type SignedInStudent = {
   signedInAt: string;
 };
 
-export type UnitStatus = 'active' | 'recently_closed' | 'inactive';
+export type UnitStatus = 'active' | 'recently_closed' | 'inactive' | 'signed_in';
 
 async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise<Student[]> {
   if (studentIds.length === 0) return [];
@@ -69,6 +69,7 @@ export default function Home() {
   const [studentUnits, setStudentUnits] = useState<UnitWithAttendance[]>([]);
   const [studentsInUnit, setStudentsInUnit] = useState<Student[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [studentAttendanceRecords, setStudentAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [unitStatuses, setUnitStatuses] = useState<Record<string, UnitStatus>>({});
 
   const [isDataLoading, setIsDataLoading] = useState(true);
@@ -101,25 +102,6 @@ export default function Home() {
   
   const [lecturerLocation, setLecturerLocation] = useState<GeolocationCoordinates | null>(null);
   const [radius, setRadius] = useState<number>(50);
-
-  const liveLedgerStudents = useMemo(() => {
-    if (!sessionActive || !activeSessionId) return [];
-
-    const sessionRecords = attendanceRecords
-        .filter(rec => rec.sessionId === activeSessionId)
-        .sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0)); // Sort by timestamp descending
-
-    return sessionRecords.map(record => {
-        const student = studentsInUnit.find(s => s.uid === record.studentId);
-        return student ? {
-            id: student.uid,
-            recordId: record.id,
-            name: student.name,
-            avatarId: student.avatarId,
-            signedInAt: record.timestamp?.toDate()?.toLocaleTimeString() || 'Processing...',
-        } : null;
-    }).filter(Boolean) as SignedInStudent[];
-  }, [sessionActive, activeSessionId, attendanceRecords, studentsInUnit]);
 
   // Session timer and PIN generation logic
   useEffect(() => {
@@ -207,41 +189,53 @@ export default function Home() {
     return () => unsubscribe();
   }, [role, user, firestore, toast, auth, selectedUnitId]);
 
-  // Effect for students to fetch units
+  // Effect for students to fetch units and their own attendance records
   useEffect(() => {
       if (role !== 'student' || !user) return;
       setIsDataLoading(true);
       const q = query(collection(firestore, "units"), where("enrolledStudents", "array-contains", user.uid));
       
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const unsubscribeUnits = onSnapshot(q, (querySnapshot) => {
           const fetchedUnits: Unit[] = [];
           querySnapshot.forEach((doc) => {
               const unitData = { id: doc.id, ...doc.data() } as Unit;
               fetchedUnits.push(unitData);
-              // Real-time update for active session
               if (unitData.activeSessionId && unitData.sessionEndTime && (unitData.sessionEndTime as Timestamp).toDate() > new Date()) {
-                setSelectedUnitId(unitData.id);
                 setActiveSessionId(unitData.activeSessionId);
               }
           });
   
           const fetchStudentAttendance = async () => {
-              const unitsWithAttendance: UnitWithAttendance[] = await Promise.all(
-                  fetchedUnits.map(async (unit) => {
-                      const attendanceQuery = query(
-                          collection(firestore, `units/${unit.id}/attendance`),
-                          where("studentId", "==", user.uid)
-                      );
-                      const attendanceSnapshot = await getDocs(attendanceQuery);
+              const attendanceQuery = query(
+                  collection(firestore, `units`), 
+                  where("enrolledStudents", "array-contains", user.uid)
+              );
+              
+              // This part can be optimized if student has too many units
+              const attendanceRecords: AttendanceRecord[] = [];
+              const unitSnapshots = await getDocs(attendanceQuery);
+              for (const unitDoc of unitSnapshots.docs) {
+                  const studentAttendanceQuery = query(
+                      collection(firestore, `units/${unitDoc.id}/attendance`),
+                      where("studentId", "==", user.uid)
+                  );
+                  const studentAttendanceSnapshot = await getDocs(studentAttendanceQuery);
+                  studentAttendanceSnapshot.forEach(doc => {
+                      attendanceRecords.push({ id: doc.id, ...doc.data() } as AttendanceRecord);
+                  });
+              }
+              setStudentAttendanceRecords(attendanceRecords);
+
+              const unitsWithAttendance: UnitWithAttendance[] = fetchedUnits.map((unit) => {
                       const attendedSessionIds = new Set(
-                        attendanceSnapshot.docs.map(doc => doc.data().sessionId)
+                        attendanceRecords.filter(r => r.sessionId && unit.sessionHistory?.includes(r.sessionId)).map(r => r.sessionId)
                       );
                       return {
                           ...unit,
                           attendedSessionsCount: attendedSessionIds.size,
                       };
-                  })
-              );
+                  });
+              
               setStudentUnits(unitsWithAttendance);
               setIsDataLoading(false);
           };
@@ -255,7 +249,7 @@ export default function Home() {
           setIsDataLoading(false);
       });
   
-      return () => unsubscribe();
+      return () => unsubscribeUnits();
   }, [role, user, firestore, toast, auth]);
 
   // Effect to manage unit statuses for students over time
@@ -269,9 +263,10 @@ export default function Home() {
           
           studentUnits.forEach(unit => {
               const endTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
-  
+              const studentHasSignedIn = studentAttendanceRecords.some(r => r.sessionId === unit.activeSessionId);
+
               if (unit.activeSessionId && endTime && endTime > now) {
-                  newStatuses[unit.id] = 'active';
+                  newStatuses[unit.id] = studentHasSignedIn ? 'signed_in' : 'active';
               } else if (!unit.activeSessionId && endTime && endTime > fiveMinutesAgo && endTime < now) {
                   newStatuses[unit.id] = 'recently_closed';
               } else {
@@ -285,7 +280,7 @@ export default function Home() {
       const intervalId = setInterval(calculateStatuses, 15000);
   
       return () => clearInterval(intervalId);
-  }, [studentUnits, role]);
+  }, [studentUnits, role, studentAttendanceRecords]);
 
   // Effect for lecturers to fetch students and attendance records for the selected unit
   useEffect(() => {
@@ -299,7 +294,6 @@ export default function Home() {
     const fetchUnitData = async () => {
         if (!auth.currentUser) return;
         try {
-          // Force token refresh before making a listener call, especially after a fresh sign-up.
           await auth.currentUser.getIdToken(true);
         } catch (tokenError) {
           console.error("Error refreshing auth token:", tokenError);
@@ -355,7 +349,6 @@ export default function Home() {
                     setLecturerLocation(selectedUnit.lecturerLocation || null);
                     setRadius(selectedUnit.sessionRadius || 50);
                 } else {
-                    // Clean up expired session from DB
                     endSession();
                 }
             } else {
@@ -386,87 +379,100 @@ export default function Home() {
     }
   };
 
-  const recordSuccessfulSignIn = useCallback(async (unitId: string, studentId: string, signInMethod: 'location' | 'qr_code' | 'manual'): Promise<boolean> => {
-    const unit = studentUnits.find(u => u.id === unitId) || units.find(u => u.id === unitId);
-    if (!unit || !unit.activeSessionId) return false;
-    
-    const { activeSessionId: sessionId, lecturerId } = unit;
-    if (!lecturerId) {
-        console.error("Lecturer ID missing from unit data. Cannot create attendance record.");
-        toast({ variant: "destructive", title: "Sign-In Failed", description: "System error: Unit is missing owner information." });
-        return false;
-    }
+    const recordSuccessfulSignIn = useCallback(async (
+        unitId: string,
+        studentId: string,
+        signInMethod: 'location' | 'qr_code' | 'manual',
+        deviceId: string,
+        locationData?: GeolocationCoordinates
+    ): Promise<{ success: boolean; deviceWarning: boolean }> => {
+        const unit = studentUnits.find(u => u.id === unitId) || units.find(u => u.id === unitId);
+        if (!unit || !unit.activeSessionId) return { success: false, deviceWarning: false };
 
-    const attendanceColRef = collection(firestore, `units/${unitId}/attendance`);
-    
-    const dupeQuery = query(attendanceColRef, where("studentId", "==", studentId), where("sessionId", "==", sessionId));
-    const dupeSnapshot = await getDocs(dupeQuery);
-    if (!dupeSnapshot.empty) {
-        toast({ variant: "destructive", title: "Already Signed In", description: "You have already signed in for this session." });
-        return false;
-    }
+        const { activeSessionId: sessionId, lecturerId } = unit;
+        if (!lecturerId) {
+            console.error("Lecturer ID missing from unit data. Cannot create attendance record.");
+            toast({ variant: "destructive", title: "Sign-In Failed", description: "System error: Unit is missing owner information." });
+            return { success: false, deviceWarning: false };
+        }
 
-    try {
-        await addDoc(attendanceColRef, {
-            studentId: studentId,
-            sessionId: sessionId,
-            lecturerId: lecturerId,
-            timestamp: serverTimestamp(),
-            signInMethod: signInMethod,
-        });
-        
-        return true;
-    } catch (e) {
-        console.error("Error recording attendance:", e);
-        toast({ variant: "destructive", title: "Sign-In Failed", description: "An error occurred while recording your attendance." });
-        return false;
-    }
-  }, [firestore, toast, studentUnits, units]);
+        const attendanceColRef = collection(firestore, `units/${unitId}/attendance`);
 
-  const handleQrSignIn = async (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string): Promise<{ success: boolean }> => {
+        const studentQuery = query(attendanceColRef, where("studentId", "==", studentId), where("sessionId", "==", sessionId));
+        const studentSnapshot = await getDocs(studentQuery);
+        if (!studentSnapshot.empty) {
+            toast({ variant: "destructive", title: "Already Signed In", description: "You have already signed in for this session." });
+            return { success: false, deviceWarning: false };
+        }
+
+        let deviceWarning = false;
+        const deviceQuery = query(attendanceColRef, where("deviceId", "==", deviceId), where("sessionId", "==", sessionId));
+        const deviceSnapshot = await getDocs(deviceQuery);
+        if (!deviceSnapshot.empty) {
+            deviceWarning = true;
+        }
+
+        try {
+            const newRecord: Partial<AttendanceRecord> = {
+                studentId,
+                sessionId,
+                lecturerId,
+                timestamp: serverTimestamp(),
+                signInMethod,
+                deviceId,
+                status: 'PENDING',
+                deviceFlag: deviceWarning,
+            };
+            if (locationData) {
+                newRecord.location = {
+                    lat: locationData.lat,
+                    lng: locationData.lng,
+                    accuracy: locationData.accuracy || 0,
+                };
+            }
+            await addDoc(attendanceColRef, newRecord);
+            return { success: true, deviceWarning };
+        } catch (e) {
+            console.error("Error recording attendance:", e);
+            toast({ variant: "destructive", title: "Sign-In Failed", description: "An error occurred while recording your attendance." });
+            return { success: false, deviceWarning: false };
+        }
+    }, [firestore, toast, studentUnits, units]);
+
+
+  const handleQrSignIn = async (unitId: string, studentId: string, deviceId: string, pin: string, sessionIdFromQr: string): Promise<{ success: boolean; deviceWarning: boolean }> => {
     const unit = studentUnits.find(u => u.id === unitId);
-    if (!unit) return { success: false };
+    if (!unit) return { success: false, deviceWarning: false };
     
     const sessionEndTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
 
     if (sessionEndTime && new Date() > sessionEndTime) {
       toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
-      return { success: false };
+      return { success: false, deviceWarning: false };
     }
 
-    const currentPin = sessionPin; // Use state value which is in sync for lecturer
-    
-    // For students, we cannot access lecturer's sessionPin state directly.
-    // This check is primarily for direct calls, but student flow relies on quick entry after QR scan.
-    // A more robust solution might involve a serverless function to validate PINs if needed.
-    if (role === 'lecturer' && pin !== currentPin) {
-      toast({ variant: 'destructive', title: 'Incorrect PIN', description: 'The PIN is incorrect or has expired.' });
-      return { success: false };
-    }
-    
     if (sessionIdFromQr !== unit.activeSessionId) {
         toast({ variant: 'destructive', title: 'Invalid Session', description: 'This QR code is for a different session.' });
-        return { success: false };
+        return { success: false, deviceWarning: false };
     }
-    const success = await recordSuccessfulSignIn(unitId, studentId, 'qr_code');
-    return { success };
+    return recordSuccessfulSignIn(unitId, studentId, 'qr_code', deviceId);
   };
   
-  const handleLocationSignIn = async (unitId: string, studentId: string, studentLocation: GeolocationCoordinates, deviceId: string): Promise<{ success: boolean; distance?: number }> => {
+  const handleLocationSignIn = async (unitId: string, studentId: string, studentLocation: GeolocationCoordinates, deviceId: string): Promise<{ success: boolean; deviceWarning: boolean; distance?: number }> => {
     const unit = studentUnits.find(u => u.id === unitId);
-    if (!unit) return { success: false };
+    if (!unit) return { success: false, deviceWarning: false };
     
     const sessionEndTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
     if (sessionEndTime && new Date() > sessionEndTime) {
       toast({ variant: "destructive", title: "Session Expired", description: "The attendance session has ended." });
-      return { success: false };
+      return { success: false, deviceWarning: false };
     }
 
     const locationForCheck = unit.lecturerLocation;
 
     if (!locationForCheck) {
         toast({ variant: "destructive", title: "Location Not Set", description: "The lecturer has not set a location for this session." });
-        return { success: false };
+        return { success: false, deviceWarning: false };
     }
 
     const studentAccuracy = studentLocation.accuracy || 0;
@@ -476,7 +482,7 @@ export default function Home() {
             title: "Poor GPS Signal",
             description: `Your location accuracy is over 50 meters. Please move to a more open area and try again.`,
         });
-        return { success: false };
+        return { success: false, deviceWarning: false };
     }
     
     const distance = haversineDistance(studentLocation, locationForCheck);
@@ -484,11 +490,10 @@ export default function Home() {
     const graceDistance = 20; // 20-meter buffer for accuracy issues
 
     if (distance > (sessionRadius + studentAccuracy + graceDistance)) {
-        return { success: false, distance: Math.round(distance) };
+        return { success: false, deviceWarning: false, distance: Math.round(distance) };
     }
 
-    const success = await recordSuccessfulSignIn(unitId, studentId, 'location');
-    return { success };
+    return recordSuccessfulSignIn(unitId, studentId, 'location', deviceId, studentLocation);
   };
 
   const handleManualSignIn = async (studentId: string, sessionId: string) => {
@@ -519,35 +524,25 @@ export default function Home() {
         lecturerId: lecturerId,
         timestamp: serverTimestamp(),
         signInMethod: 'manual',
+        status: 'APPROVED', // Manual sign-ins are auto-approved
+        deviceFlag: false,
+        deviceId: `manual-${user.uid}`
     });
 
     toast({ title: "Attendance Marked", description: `${student.name} has been manually marked as present.` });
   };
   
-  const handleAttendanceRecordDelete = async (recordIds: string[]) => {
-    if (!selectedUnitId || recordIds.length === 0) return;
-
-    const batch = writeBatch(firestore);
-    recordIds.forEach(recordId => {
-      const recordRef = doc(firestore, `units/${selectedUnitId}/attendance`, recordId);
-      batch.delete(recordRef);
-    });
-
-    try {
-      await batch.commit();
-      toast({
-        title: "Record(s) Deleted",
-        description: `Successfully removed ${recordIds.length} attendance record(s).`
-      });
-    } catch (error) {
-      console.error("Error deleting attendance records:", error);
-      toast({
-        variant: "destructive",
-        title: "Deletion Failed",
-        description: "Could not remove the selected attendance records."
-      });
-    }
-  };
+    const updateAttendanceStatus = async (recordId: string, status: 'APPROVED' | 'REJECTED') => {
+        if (!selectedUnitId) return;
+        const recordRef = doc(firestore, `units/${selectedUnitId}/attendance`, recordId);
+        try {
+            await updateDoc(recordRef, { status: status });
+            toast({ title: 'Attendance Updated', description: `The record has been marked as ${status.toLowerCase()}.`});
+        } catch (error) {
+            console.error("Error updating attendance status:", error);
+            toast({ variant: 'destructive', title: 'Update Failed', description: 'Could not update the attendance record.' });
+        }
+    };
 
   const toggleSession = async () => {
     if (!selectedUnitId) {
@@ -636,6 +631,7 @@ export default function Home() {
               onLocationSignIn={handleLocationSignIn}
               onQrSignIn={handleQrSignIn}
               user={user}
+              attendanceRecords={studentAttendanceRecords}
             />
           )}
 
@@ -645,7 +641,6 @@ export default function Home() {
               allUnits={units}
               students={studentsInUnit}
               unit={selectedUnit!}
-              liveLedgerStudents={liveLedgerStudents}
               attendanceRecords={attendanceRecords}
               isSessionActive={sessionActive}
               onToggleSession={toggleSession}
@@ -660,7 +655,7 @@ export default function Home() {
               setRadius={setRadius}
               onManualSignIn={handleManualSignIn}
               onDeleteUnit={handleUnitDelete}
-              onDeleteAttendanceRecords={handleAttendanceRecordDelete}
+              onUpdateAttendanceStatus={updateAttendanceStatus}
             />
           )}
         </div>
