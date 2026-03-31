@@ -17,6 +17,43 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Moon, Sun } from 'lucide-react';
+import { useState, useEffect } from 'react';
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState('light');
+
+  useEffect(() => {
+    const storedTheme = localStorage.getItem('theme');
+    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    const initialTheme = storedTheme || systemTheme;
+    setTheme(initialTheme);
+    if (initialTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  return (
+    <Button variant="ghost" size="icon" onClick={toggleTheme}>
+      {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+      <span className="sr-only">Toggle theme</span>
+    </Button>
+  );
+}
+
 
 export function Header() {
   const { user, loading } = useUser();
@@ -38,10 +75,10 @@ export function Header() {
           </h1>
         </Link>
 
-        <div>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
           {loading ? (
             <div className="flex items-center gap-2">
-               <Skeleton className="h-8 w-24" />
                <Skeleton className="h-10 w-10 rounded-full" />
             </div>
           ) : user ? (

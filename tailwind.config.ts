@@ -10,9 +10,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['Inter', 'sans-serif'],
-        headline: ['Space Grotesk', 'sans-serif'],
-        code: ['Source Code Pro', 'monospace'],
+        body: ['Inter', 'system-ui', 'sans-serif'],
+        headline: ['Kaisei HarunoUmi', 'serif'],
       },
       colors: {
         background: 'hsl(var(--background))',
