@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Loader2, FileText } from 'lucide-react';
 import type { Student, Unit, AttendanceRecord } from '@/lib/data';
-import { findImage } from '@/lib/data';
+import { getAvatarUrl } from '@/lib/avatars';
 import { getAttendanceSummary } from '@/app/actions';
 
 export function AttendanceAnalytics({ students, unit, attendanceRecords }: { students: Student[], unit: Unit, attendanceRecords: AttendanceRecord[] }) {
@@ -75,7 +75,6 @@ export function AttendanceAnalytics({ students, unit, attendanceRecords }: { stu
             {students.map((student) => {
               const { percentage, attended, total } = calculateAttendance(student);
               const isBelowThreshold = percentage < unit.attendanceThreshold;
-              const avatar = findImage(student.avatarId);
               const isLoading = loadingSummary === student.uid;
 
               return (
@@ -83,7 +82,7 @@ export function AttendanceAnalytics({ students, unit, attendanceRecords }: { stu
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar>
-                        <AvatarImage src={avatar?.imageUrl} alt={student.name} data-ai-hint={avatar?.imageHint} />
+                        <AvatarImage src={getAvatarUrl(student.avatarStyle, student.avatarSeed)} alt={student.name} />
                         <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
                       </Avatar>
                       <div>

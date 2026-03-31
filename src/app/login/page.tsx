@@ -30,6 +30,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { cn } from '@/lib/utils';
+import { generateAvatar } from '@/lib/avatars';
 
 const signUpSchema = z.object({
   name: z.string().min(1, { message: "Full name is required." }),
@@ -192,12 +193,16 @@ export default function LoginPage() {
       const user = userCredential.user;
       await updateProfile(user, { displayName: values.name });
 
+      const { style, seed } = generateAvatar(user.uid);
+
       const userDocRef = doc(firestore, 'users', user.uid);
       await setDoc(userDocRef, {
         uid: user.uid,
         name: values.name,
         email: values.email,
         role: values.role,
+        avatarStyle: style,
+        avatarSeed: seed,
       });
 
       await user.reload();

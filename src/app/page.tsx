@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@/firebase/auth/use-user';
+import { useUserProfile, type UserProfile } from '@/hooks/use-user-profile';
 import { useAuth, useFirestore } from '@/firebase/provider';
 import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, writeBatch, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { Header } from '@/components/header';
@@ -48,7 +48,8 @@ async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise
         name: data.name,
         email: data.email,
         role: data.role,
-        avatarId: `student-${(students.length % 5) + 1}`,
+        avatarStyle: data.avatarStyle,
+        avatarSeed: data.avatarSeed,
       });
     });
   }
@@ -56,14 +57,14 @@ async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise
 }
 
 export default function Home() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading } = useUserProfile();
   const firestore = useFirestore();
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
-  const [role, setRole] = useState<'student' | 'lecturer' | null>(null);
-  const [isRoleLoading, setIsRoleLoading] = useState(true);
+  const role = user?.role;
+  const isRoleLoading = userLoading;
 
   const [units, setUnits] = useState<Unit[]>([]);
   const [studentUnits, setStudentUnits] = useState<UnitWithAttendance[]>([]);
@@ -126,37 +127,13 @@ export default function Home() {
     };
   }, [sessionActive, sessionEndTime, toast, endSession]);
 
-  // Effect to fetch user role
+  // Effect to handle user not being logged in
   useEffect(() => {
     if (userLoading) return;
     if (!user) {
       router.push('/login');
-      return;
     }
-
-    const fetchRole = async () => {
-      setIsRoleLoading(true);
-      const userDocRef = doc(firestore, 'users', user.uid);
-      try {
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          setRole(userDocSnap.data().role);
-        } else {
-          // This can happen for a split second after signup before the user doc is created
-          // Silently ignore for now, the listener will pick it up
-        }
-      } catch (error) {
-        if (auth.currentUser) {
-          console.error("Error fetching user role:", error);
-          toast({ variant: "destructive", title: "Account Error", description: "Your user role could not be found." });
-        }
-      } finally {
-        setIsRoleLoading(false);
-      }
-    };
-
-    fetchRole();
-  }, [user, userLoading, router, firestore, toast, auth]);
+  }, [user, userLoading, router]);
 
   // Effect for lecturers to fetch units
   useEffect(() => {
@@ -497,7 +474,7 @@ export default function Home() {
   };
 
   const handleManualSignIn = async (studentId: string, sessionId: string) => {
-    if (!selectedUnitId || !selectedUnit) return;
+    if (!selectedUnitId || !selectedUnit || !user) return;
     
     const { lecturerId } = selectedUnit;
     if (!lecturerId) {
@@ -593,11 +570,7 @@ export default function Home() {
     }
 
     if (!role) {
-      return (
-        <div className="text-center py-10">
-          <p className="text-lg text-destructive">Error: Could not determine user role.</p>
-        </div>
-      );
+      return null;
     }
 
     return (

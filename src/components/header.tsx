@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@/firebase/auth/use-user';
+import { useUserProfile } from '@/hooks/use-user-profile';
 import { signOut } from 'firebase/auth';
 import { useAuth } from '@/firebase/provider';
 import { AttendSyncIcon } from '@/components/icons';
@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Moon, Sun } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { getAvatarUrl } from '@/lib/avatars';
 
 function ThemeToggle() {
   const [theme, setTheme] = useState('light');
@@ -56,7 +57,7 @@ function ThemeToggle() {
 
 
 export function Header() {
-  const { user, loading } = useUser();
+  const { user, loading } = useUserProfile();
   const auth = useAuth();
   const router = useRouter();
 
@@ -86,10 +87,13 @@ export function Header() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                   <Avatar>
-                    <AvatarImage src={user.photoURL || ''} alt={user.displayName || 'User'} />
+                    <AvatarImage 
+                      src={getAvatarUrl(user.avatarStyle, user.avatarSeed)} 
+                      alt={user.name || 'User'}
+                    />
                     <AvatarFallback>
-                      {user.displayName
-                        ? user.displayName.charAt(0)
+                      {user.name
+                        ? user.name.charAt(0)
                         : user.email?.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -99,7 +103,7 @@ export function Header() {
                 <DropdownMenuLabel>
                   <div className="font-normal">
                     <p className="text-sm font-medium leading-none">
-                      {user.displayName}
+                      {user.name}
                     </p>
                     <p className="text-xs leading-none text-muted-foreground">
                       {user.email}
@@ -107,6 +111,9 @@ export function Header() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/profile">Profile</Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleSignOut}>
                   Sign Out
                 </DropdownMenuItem>
