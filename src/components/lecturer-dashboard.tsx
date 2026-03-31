@@ -10,13 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { Student, Unit, AttendanceRecord } from '@/lib/data';
-import { findImage } from '@/lib/data';
+import { getAvatarUrl } from '@/lib/avatars';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
 import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle, Trash2, Check, X, AlertTriangle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import type { GeolocationCoordinates } from '@/app/page';
+import type { GeolocationCoordinates } from '@/app/dashboard/page';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useForm } from 'react-hook-form';
@@ -276,6 +276,38 @@ export function LecturerDashboard({
   const [isCopied, setIsCopied] = React.useState(false);
   const { toast } = useToast();
 
+  const sessionAttendanceRecords = useMemo(() => 
+      attendanceRecords
+          .filter(r => r.sessionId === activeSessionId)
+          .sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0)),
+      [attendanceRecords, activeSessionId]
+  );
+
+  const { flaggedDeviceGroups, singleDeviceRecords } = useMemo(() => {
+      if (!isSessionActive) return { flaggedDeviceGroups: [], singleDeviceRecords: [] };
+
+      const groupedByDevice = sessionAttendanceRecords.reduce((acc, record) => {
+          const key = record.deviceId;
+          if (!acc[key]) acc[key] = [];
+          acc[key].push(record);
+          return acc;
+      }, {} as Record<string, AttendanceRecord[]>);
+      
+      const flagged = Object.values(groupedByDevice).filter(records => records.length > 1);
+      const single = Object.values(groupedByDevice).filter(records => records.length === 1).flatMap(records => records);
+      
+      return { flaggedDeviceGroups: flagged, singleDeviceRecords: single };
+
+  }, [isSessionActive, sessionAttendanceRecords]);
+
+  if (!unit) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <UnitManagementTab allUnits={allUnits} lecturer={lecturer} onDeleteUnit={onDeleteUnit} />
+      </div>
+    );
+  }
+
   const handleSetLocation = () => {
     setIsGettingLocation(true);
     if (!navigator.geolocation) {
@@ -319,39 +351,7 @@ export function LecturerDashboard({
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
-
-  if (!unit) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center py-10">
-        <UnitManagementTab allUnits={allUnits} lecturer={lecturer} onDeleteUnit={onDeleteUnit} />
-      </div>
-    );
-  }
   
-    const sessionAttendanceRecords = useMemo(() => 
-        attendanceRecords
-            .filter(r => r.sessionId === activeSessionId)
-            .sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0)),
-        [attendanceRecords, activeSessionId]
-    );
-
-    const { flaggedDeviceGroups, singleDeviceRecords } = useMemo(() => {
-        if (!isSessionActive) return { flaggedDeviceGroups: [], singleDeviceRecords: [] };
-
-        const groupedByDevice = sessionAttendanceRecords.reduce((acc, record) => {
-            const key = record.deviceId;
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(record);
-            return acc;
-        }, {} as Record<string, AttendanceRecord[]>);
-        
-        const flagged = Object.values(groupedByDevice).filter(records => records.length > 1);
-        const single = Object.values(groupedByDevice).filter(records => records.length === 1).flatMap(records => records);
-        
-        return { flaggedDeviceGroups: flagged, singleDeviceRecords: single };
-
-    }, [isSessionActive, sessionAttendanceRecords]);
-
   const qrCodeValue = isSessionActive ? JSON.stringify({ unitId: unit.id, sessionId: activeSessionId }) : '';
 
   const StatusBadge = ({ status }: { status: AttendanceRecord['status'] }) => {
