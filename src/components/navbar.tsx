@@ -70,6 +70,11 @@ export function Navbar() {
   const auth = useAuth();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleSignOut = async () => {
     await signOut(auth);
@@ -101,9 +106,10 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
+          {isMounted ? <ThemeToggle /> : <Skeleton className="h-10 w-10" />}
+          
           <div className="hidden md:flex items-center gap-2">
-            {loading ? (
+            {!isMounted || loading ? (
                 <Skeleton className="h-10 w-24 rounded-md" />
             ) : user ? (
                 <DropdownMenu>
@@ -154,6 +160,7 @@ export function Navbar() {
           </div>
 
           <div className="md:hidden">
+            {isMounted ? (
               <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                   <SheetTrigger asChild>
                       <Button variant="ghost" size="icon">
@@ -186,6 +193,8 @@ export function Navbar() {
                       </div>
                   </SheetContent>
               </Sheet>
+              ) : <Skeleton className="h-10 w-10" />
+            }
           </div>
         </div>
       </div>
