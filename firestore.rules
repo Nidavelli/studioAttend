@@ -56,11 +56,12 @@ service cloud.firestore {
                       (isLecturerAndOwner(unitId) || resource.data.studentId == request.auth.uid);
 
         // LIST: Only the lecturer who owns the unit can list all attendance records. 
-        // Students must query for their own records, which is handled by a separate rule.
-        allow list: if isLecturerAndOwner(unitId);
+        // Students can list their own records via a query constraint.
+        allow list: if isLecturerAndOwner(unitId) || 
+                      (request.query.get("studentId") == request.auth.uid && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student');
 
         // CREATE: Students can create a PENDING record for an ACTIVE session.
-        // Lecturers can manually add a PENDING record.
+        // Lecturers can manually add a record.
         allow create: if (
             // STUDENT condition
             request.auth != null &&

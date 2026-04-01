@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { generateAvatar } from '@/lib/avatars';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingScreen } from '@/components/loading-screen';
+import { useUserProfile } from '@/hooks/use-user-profile';
 
 const signUpSchema = z.object({
   name: z.string().min(1, { message: "Full name is required." }),
@@ -113,6 +114,7 @@ const PasswordStrengthMeter = ({ password }: { password?: string }) => {
 
 function AuthPageContent() {
   const auth = useAuth();
+  const { user, loading: userLoading } = useUserProfile();
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
@@ -136,6 +138,12 @@ function AuthPageContent() {
         });
     }
   }, [searchParams, toast]);
+
+  useEffect(() => {
+    if (!userLoading && user) {
+        router.push('/dashboard');
+    }
+  }, [user, userLoading, router]);
 
   const form = useForm<z.infer<typeof signUpSchema>>({
     resolver: zodResolver(signUpSchema),
@@ -240,8 +248,8 @@ function AuthPageContent() {
   };
 
 
-  if (isLoading) {
-    return <LoadingScreen />;
+  if (userLoading || isLoading || user) {
+    return <LoadingScreen text={userLoading ? "Checking session..." : "Setting things up..."}/>;
   }
 
   return (
@@ -455,7 +463,7 @@ function AuthPageContent() {
 
 export default function AuthPage() {
     return (
-        <Suspense fallback={<div>Loading...</div>}>
+        <Suspense fallback={<LoadingScreen text="Loading..." />}>
             <AuthPageContent />
         </Suspense>
     )

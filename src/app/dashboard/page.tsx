@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserProfile } from '@/hooks/use-user-profile';
 import { useAuth, useFirestore } from '@/firebase/provider';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, writeBatch, deleteDoc, arrayUnion } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -68,30 +68,15 @@ function DashboardContent() {
   const [studentUnits, setStudentUnits] = useState<UnitWithAttendance[]>([]);
   const [studentsInUnit, setStudentsInUnit] = useState<Student[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [studentAttendanceRecords, setStudentAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [unitStatuses, setUnitStatuses] = useState<Record<string, UnitStatus>>({});
 
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   
-  const endSession = useCallback(async () => {
-    if (selectedUnitId) {
-        const unitRef = doc(firestore, 'units', selectedUnitId);
-        await updateDoc(unitRef, {
-            activeSessionId: null,
-            sessionEndTime: Timestamp.fromDate(new Date()), // Keep endTime to detect 'recently_closed'
-        });
-    }
-    setSessionActive(false);
-    // Do not nullify sessionEndTime here
-    setSessionPin('');
-    setActiveSessionId(null);
-    setLecturerLocation(null);
-  }, [selectedUnitId, firestore]);
-
   const selectedUnit = useMemo(() => {
-    return units.find(u => u.id === selectedUnitId) || null;
-  }, [units, selectedUnitId]);
+    const allUnits = role === 'lecturer' ? units : studentUnits;
+    return allUnits.find(u => u.id === selectedUnitId) || null;
+  }, [units, studentUnits, selectedUnitId, role]);
 
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionPin, setSessionPin] = useState<string>('');
@@ -101,6 +86,20 @@ function DashboardContent() {
   
   const [lecturerLocation, setLecturerLocation] = useState<GeolocationCoordinates | null>(null);
   const [radius, setRadius] = useState<number>(50);
+
+  const endSession = useCallback(async () => {
+    if (selectedUnitId) {
+        const unitRef = doc(firestore, 'units', selectedUnitId);
+        await updateDoc(unitRef, {
+            activeSessionId: null,
+            sessionEndTime: Timestamp.fromDate(new Date()), // Keep endTime to detect 'recently_closed'
+        });
+    }
+    setSessionActive(false);
+    setActiveSessionId(null);
+    setSessionPin('');
+    setLecturerLocation(null);
+  }, [selectedUnitId, firestore]);
 
   // Session timer and PIN generation logic
   useEffect(() => {
@@ -127,99 +126,120 @@ function DashboardContent() {
 
   // Effect for lecturers to fetch units
   useEffect(() => {
-    if (role !== 'lecturer' || !user) return;
+    if (role !== 'lecturer' || !user?.uid) return;
     
     setIsDataLoading(true);
-    let q = query(collection(firestore, "units"), where("lecturerId", "==", user.uid));
+    const q = query(collection(firestore, "units"), where("lecturerId", "==", user.uid));
     
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const fetchedUnits: Unit[] = [];
-        querySnapshot.forEach((doc) => {
-            fetchedUnits.push({ id: doc.id, ...doc.data() } as Unit);
-        });
-        
+        const fetchedUnits = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Unit));
         setUnits(fetchedUnits);
         if (fetchedUnits.length > 0 && !selectedUnitId) {
             setSelectedUnitId(fetchedUnits[0].id);
-        } else if (fetchedUnits.length === 0) {
-            setIsDataLoading(false);
         }
+        setIsDataLoading(false);
     }, (error) => {
+        console.error("Error fetching units:", error);
         if (auth.currentUser) {
-          console.error("Error fetching units:", error);
-          toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch units.' });
+          toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch your units.' });
         }
         setIsDataLoading(false);
     });
 
     return () => unsubscribe();
-  }, [role, user, firestore, toast, auth, selectedUnitId]);
+  }, [role, user?.uid, firestore, auth]);
+
+  // Effect for lecturers to fetch students for the selected unit
+  useEffect(() => {
+    if (role !== 'lecturer' || !selectedUnit?.enrolledStudents) {
+      setStudentsInUnit([]);
+      return;
+    }
+    setIsDataLoading(true);
+    getStudentsFromIds(firestore, selectedUnit.enrolledStudents).then(studentData => {
+        setStudentsInUnit(studentData);
+        setIsDataLoading(false);
+    });
+  }, [role, selectedUnit, firestore]);
+  
+  // Effect for lecturers to listen to attendance records for the selected unit
+  useEffect(() => {
+      if (role !== 'lecturer' || !selectedUnitId) {
+        setAttendanceRecords([]);
+        return;
+      }
+      setIsDataLoading(true);
+      const attendanceQuery = query(collection(firestore, `units/${selectedUnitId}/attendance`));
+  
+      const unsubscribe = onSnapshot(attendanceQuery, (snapshot) => {
+          const records: AttendanceRecord[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data()} as AttendanceRecord));
+          setAttendanceRecords(records);
+          setIsDataLoading(false);
+      }, (error: any) => {
+          console.error("Error fetching attendance records:", error);
+          if (auth.currentUser && error.code === 'permission-denied') {
+            toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
+          }
+          setIsDataLoading(false);
+      });
+  
+      return () => unsubscribe();
+  }, [role, selectedUnitId, firestore, auth]);
+
 
   // Effect for students to fetch units and their own attendance records
   useEffect(() => {
-      if (role !== 'student' || !user) return;
-      setIsDataLoading(true);
-      const q = query(collection(firestore, "units"), where("enrolledStudents", "array-contains", user.uid));
+      if (role !== 'student' || !user?.uid) return;
       
-      const unsubscribeUnits = onSnapshot(q, (querySnapshot) => {
-          const fetchedUnits: Unit[] = [];
-          querySnapshot.forEach((doc) => {
-              const unitData = { id: doc.id, ...doc.data() } as Unit;
-              fetchedUnits.push(unitData);
-              if (unitData.activeSessionId && unitData.sessionEndTime && (unitData.sessionEndTime as Timestamp).toDate() > new Date()) {
-                setActiveSessionId(unitData.activeSessionId);
-              }
-          });
-  
-          const fetchStudentAttendance = async () => {
-              const attendanceQuery = query(
-                  collection(firestore, `units`), 
-                  where("enrolledStudents", "array-contains", user.uid)
-              );
-              
-              const attendanceRecords: AttendanceRecord[] = [];
-              const unitSnapshots = await getDocs(attendanceQuery);
-              for (const unitDoc of unitSnapshots.docs) {
-                  const studentAttendanceQuery = query(
-                      collection(firestore, `units/${unitDoc.id}/attendance`),
-                      where("studentId", "==", user.uid)
-                  );
-                  const studentAttendanceSnapshot = await getDocs(studentAttendanceQuery);
-                  studentAttendanceSnapshot.forEach(doc => {
-                      attendanceRecords.push({ id: doc.id, ...doc.data() } as AttendanceRecord);
-                  });
-              }
-              setStudentAttendanceRecords(attendanceRecords);
+      setIsDataLoading(true);
+      const unitsQuery = query(collection(firestore, "units"), where("enrolledStudents", "array-contains", user.uid));
+      
+      const unsubscribeUnits = onSnapshot(unitsQuery, async (unitsSnapshot) => {
+          const fetchedUnits = unitsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Unit));
 
-              const unitsWithAttendance: UnitWithAttendance[] = fetchedUnits.map((unit) => {
-                      const attendedSessionIds = new Set(
-                        attendanceRecords.filter(r => r.sessionId && unit.sessionHistory?.includes(r.sessionId)).map(r => r.sessionId)
-                      );
-                      return {
-                          ...unit,
-                          attendedSessionsCount: attendedSessionIds.size,
-                      };
-                  });
-              
-              setStudentUnits(unitsWithAttendance);
+          if (fetchedUnits.length === 0) {
+              setStudentUnits([]);
               setIsDataLoading(false);
-          };
-          fetchStudentAttendance();
+              return;
+          }
+
+          const attendancePromises = fetchedUnits.map(unit => {
+              const attendanceQuery = query(
+                  collection(firestore, `units/${unit.id}/attendance`),
+                  where("studentId", "==", user.uid)
+              );
+              return getDocs(attendanceQuery);
+          });
+          
+          const attendanceSnapshots = await Promise.all(attendancePromises);
+
+          const unitsWithAttendance: UnitWithAttendance[] = fetchedUnits.map((unit, index) => {
+              const attendedSessionIds = new Set(
+                attendanceSnapshots[index].docs.map(doc => doc.data().sessionId)
+              );
+              return {
+                  ...unit,
+                  attendedSessionsCount: attendedSessionIds.size,
+              };
+          });
+          
+          setStudentUnits(unitsWithAttendance);
+          setIsDataLoading(false);
           
       }, (error) => {
+          console.error("Error fetching student units:", error);
           if (auth.currentUser) {
-              console.error("Error fetching student units:", error);
               toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch your units.' });
           }
           setIsDataLoading(false);
       });
   
       return () => unsubscribeUnits();
-  }, [role, user, firestore, toast, auth]);
+  }, [role, user?.uid, firestore, toast, auth]);
 
   // Effect to manage unit statuses for students over time
   useEffect(() => {
-      if (role !== 'student') return;
+      if (role !== 'student' || !user?.uid) return;
   
       const calculateStatuses = () => {
           const now = new Date();
@@ -228,7 +248,8 @@ function DashboardContent() {
           
           studentUnits.forEach(unit => {
               const endTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
-              const studentHasSignedIn = studentAttendanceRecords.some(r => r.sessionId === unit.activeSessionId);
+              // We need to check the student's *actual* attendance records for this session
+              const studentHasSignedIn = attendanceRecords.some(r => r.sessionId === unit.activeSessionId && r.studentId === user.uid);
 
               if (unit.activeSessionId && endTime && endTime > now) {
                   newStatuses[unit.id] = studentHasSignedIn ? 'signed_in' : 'active';
@@ -245,62 +266,8 @@ function DashboardContent() {
       const intervalId = setInterval(calculateStatuses, 15000);
   
       return () => clearInterval(intervalId);
-  }, [studentUnits, role, studentAttendanceRecords]);
-
-  // Effect for lecturers to fetch students and attendance records for the selected unit
-  useEffect(() => {
-    if (role !== 'lecturer' || !selectedUnit || !user) {
-      if (role === 'lecturer' && units.length > 0 && !selectedUnit) {
-        setIsDataLoading(false);
-      }
-      return;
-    };
-    
-    const fetchUnitData = async () => {
-        if (!auth.currentUser) return;
-        try {
-          await auth.currentUser.getIdToken(true);
-        } catch (tokenError) {
-          console.error("Error refreshing auth token:", tokenError);
-          setIsDataLoading(false);
-          return;
-        }
-
-        setIsDataLoading(true);
-        const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents);
-        setStudentsInUnit(studentData);
-        
-        const attendanceQuery = query(
-          collection(firestore, `units/${selectedUnit.id}/attendance`)
-        );
-
-        const unsubscribe = onSnapshot(attendanceQuery, (snapshot) => {
-            const records: AttendanceRecord[] = [];
-            snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data()} as AttendanceRecord));
-            setAttendanceRecords(records);
-            setIsDataLoading(false);
-        }, (error: any) => {
-            console.error("Error fetching attendance records:", error);
-             if (auth.currentUser && error.code === 'permission-denied') {
-              toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
-            }
-            setIsDataLoading(false);
-        });
-        
-        return unsubscribe;
-    }
-    
-    const unsubscribePromise = fetchUnitData();
-
-    return () => {
-      unsubscribePromise.then(unsubscribe => {
-        if (unsubscribe) {
-          unsubscribe();
-        }
-      });
-    }
-  }, [selectedUnit, firestore, role, user, toast, auth, units.length]);
-
+  }, [studentUnits, role, attendanceRecords, user?.uid]);
+  
     // Effect to restore session state for lecturer
     useEffect(() => {
         if (role === 'lecturer' && selectedUnit) {
@@ -554,7 +521,7 @@ function DashboardContent() {
     }
   };
 
-  if (userLoading || isDataLoading) {
+  if (userLoading || (isDataLoading && (role === 'lecturer' ? units.length === 0 : studentUnits.length === 0))) {
       return (
           <div className="container mx-auto p-4 sm:p-6 lg:p-8 space-y-6 mt-8">
               <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
@@ -601,7 +568,7 @@ function DashboardContent() {
               onLocationSignIn={handleLocationSignIn}
               onQrSignIn={handleQrSignIn}
               user={user}
-              attendanceRecords={studentAttendanceRecords}
+              attendanceRecords={attendanceRecords}
             />
           )}
 
