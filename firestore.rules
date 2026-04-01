@@ -50,11 +50,14 @@ service cloud.firestore {
 
       // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
-        // A lecturer can read all records for their unit.
-        // A student can read their own records.
-        allow read: if request.auth != null && 
-                      (get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid || 
-                       resource.data.studentId == request.auth.uid);
+        
+        // GET: A lecturer can get any record in their unit. A student can only get their own record.
+        allow get: if request.auth != null && 
+                      (isLecturerAndOwner(unitId) || resource.data.studentId == request.auth.uid);
+
+        // LIST: Only the lecturer who owns the unit can list all attendance records. 
+        // Students must query for their own records, which is handled by a separate rule.
+        allow list: if isLecturerAndOwner(unitId);
 
         // CREATE: Students can create a PENDING record for an ACTIVE session.
         // Lecturers can manually add a PENDING record.
