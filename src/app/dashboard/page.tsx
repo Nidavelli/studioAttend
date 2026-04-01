@@ -271,8 +271,7 @@ function DashboardContent() {
         setStudentsInUnit(studentData);
         
         const attendanceQuery = query(
-          collection(firestore, `units/${selectedUnit.id}/attendance`),
-          where("lecturerId", "==", user.uid)
+          collection(firestore, `units/${selectedUnit.id}/attendance`)
         );
 
         const unsubscribe = onSnapshot(attendanceQuery, (snapshot) => {
