@@ -32,6 +32,7 @@ import {
 import { cn } from '@/lib/utils';
 import { generateAvatar } from '@/lib/avatars';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { LoadingScreen } from '@/components/loading-screen';
 
 const signUpSchema = z.object({
   name: z.string().min(1, { message: "Full name is required." }),
@@ -117,6 +118,8 @@ function AuthPageContent() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
 
+  const [isLoading, setIsLoading] = useState(false);
+
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
   const [showSignInPassword, setShowSignInPassword] = useState(false);
@@ -185,20 +188,24 @@ function AuthPageContent() {
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     try {
       const result = await signInWithEmailAndPassword(auth, signInEmail, signInPassword);
       handleLoginSuccess(result.user);
     } catch (error) {
       handleAuthError(error);
+      setIsLoading(false);
     }
   };
 
   const handleEmailSignUp = async (values: z.infer<typeof signUpSchema>) => {
+    setIsLoading(true);
     let userCredential;
     try {
       userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
     } catch (error) {
       handleAuthError(error);
+      setIsLoading(false);
       return;
     }
 
@@ -228,9 +235,14 @@ function AuthPageContent() {
             title: 'Registration Incomplete',
             description: 'Your account was created, but we failed to save your profile information. Please contact support.',
         });
+        setIsLoading(false);
     }
   };
 
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-muted/30 p-4">
@@ -285,7 +297,7 @@ function AuthPageContent() {
                         {showSignInPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <Button type="submit" className="w-full">
+                  <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
                     Sign In
                   </Button>
                 </form>
