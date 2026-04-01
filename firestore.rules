@@ -23,8 +23,14 @@ service cloud.firestore {
       allow read: if request.auth != null;
 
       // Only lecturers can create new units, and they must be the owner.
+      // This rule enforces the initial structure of the document.
       allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer'
-                    && request.resource.data.lecturerId == request.auth.uid;
+                    && request.resource.data.lecturerId == request.auth.uid
+                    && request.resource.data.name is string
+                    && request.resource.data.code is string
+                    && request.resource.data.attendanceThreshold is number
+                    && request.resource.data.enrolledStudents.size() == 0
+                    && request.resource.data.sessionHistory.size() == 0;
 
       // Lecturers can update their own units.
       // Students can ONLY update a unit to add themselves to the enrolledStudents list.
