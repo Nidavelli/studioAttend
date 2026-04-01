@@ -23,6 +23,8 @@ import { getAvatarUrl } from '@/lib/avatars';
 import {
   Sheet,
   SheetContent,
+  SheetHeader,
+  SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from '@/lib/utils';
@@ -159,6 +161,9 @@ export function Navbar() {
                       </Button>
                   </SheetTrigger>
                   <SheetContent side="right">
+                      <SheetHeader>
+                        <SheetTitle className="sr-only">Mobile Menu</SheetTitle>
+                      </SheetHeader>
                       <div className="flex flex-col gap-6 pt-10">
                           {navLinks.map(link => (
                               <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground hover:text-primary transition-colors">
