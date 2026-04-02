@@ -16,8 +16,12 @@ service cloud.firestore {
       // A user can read a unit if they are the lecturer,
       // or if their user document's 'enrolledUnitIds' array contains the unitId.
       allow read: if request.auth != null && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrolledUnitIds.hasAny([unitId]) ||
-        resource.data.lecturerId == request.auth.uid
+        resource.data.lecturerId == request.auth.uid ||
+        (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            'enrolledUnitIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrolledUnitIds.hasAny([unitId])
+        )
       );
 
       // CREATE: The creating user must set themselves as the lecturerId and initialize fields.
@@ -54,21 +58,34 @@ service cloud.firestore {
       // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
         
-        // READ: A lecturer can read any record in their unit. A student can only read their own record.
-        allow read: if request.auth != null && (isUnitOwner(unitId) || (resource != null && resource.data.studentId == request.auth.uid));
+        // READ: A lecturer can read if their UID matches the lecturerId on the record.
+        // A student can read if their UID matches the studentId on the record.
+        // This rule is safe for queries, get, and list operations.
+        allow read: if request.auth != null && (
+          resource.data.lecturerId == request.auth.uid ||
+          (resource != null && resource.data.studentId == request.auth.uid)
+        );
 
-        // CREATE: Students can create a PENDING record for an ACTIVE session if they are enrolled.
+        // CREATE: Students can create a PENDING record for an ACTIVE session.
         // Lecturers can manually add a record.
         allow create: if (
-            // STUDENT condition: check for enrollment in the subcollection
+            // STUDENT condition
             request.auth != null &&
             request.resource.data.studentId == request.auth.uid &&
+            // Check enrollment
             exists(/databases/$(database)/documents/units/$(unitId)/enrolledStudents/$(request.auth.uid)) &&
+            // Check session is active
             request.resource.data.sessionId == get(/databases/$(database)/documents/units/$(unitId)).data.activeSessionId &&
-            request.resource.data.status == 'PENDING'
+            // Check status is PENDING
+            request.resource.data.status == 'PENDING' &&
+            // NEW: Ensure the correct lecturerId is being written to the record
+            request.resource.data.lecturerId == get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId
         ) || (
             // LECTURER condition for manual sign-in
-            isUnitOwner(unitId) && request.resource.data.signInMethod == 'manual'
+            isUnitOwner(unitId) && 
+            request.resource.data.signInMethod == 'manual' &&
+            // NEW: Ensure the correct lecturerId is being written to the record
+            request.resource.data.lecturerId == request.auth.uid
         );
         
         // UPDATE: Only the unit owner can update status.
