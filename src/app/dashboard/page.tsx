@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserProfile, type UserProfile } from '@/hooks/use-user-profile';
 import { useAuth, useFirestore } from '@/firebase/provider';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc, collectionGroup, documentId, type QuerySnapshot, type DocumentData } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc, writeBatch } from 'firebase/firestore';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -36,7 +36,7 @@ export type SignedInStudent = {
 export type UnitStatus = 'active' | 'recently_closed' | 'inactive' | 'signed_in';
 
 async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise<Student[]> {
-  if (studentIds.length === 0) return [];
+  if (!studentIds || studentIds.length === 0) return [];
   const students: Student[] = [];
   // Firestore 'in' queries are limited to 30 elements
   for (let i = 0; i < studentIds.length; i += 30) {
@@ -81,7 +81,6 @@ function DashboardContent({ user }: { user: UserProfile }) {
     return allUnits.find(u => u.id === selectedUnitId) || null;
   }, [units, studentUnits, selectedUnitId, role]);
 
-  const [sessionActive, setSessionActive] = useState(false);
   const [sessionPin, setSessionPin] = useState<string>('');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionDuration, setSessionDuration] = useState<number>(15);
@@ -89,6 +88,14 @@ function DashboardContent({ user }: { user: UserProfile }) {
   
   const [lecturerLocation, setLecturerLocation] = useState<GeolocationCoordinates | null>(null);
   const [radius, setRadius] = useState<number>(50);
+
+  const isSessionActive = useMemo(() => {
+    if (!selectedUnit?.activeSessionId || !selectedUnit?.sessionEndTime) {
+      return false;
+    }
+    const endTime = (selectedUnit.sessionEndTime as Timestamp).toDate();
+    return endTime > new Date();
+  }, [selectedUnit]);
 
   const endSession = useCallback(async () => {
     if (selectedUnitId) {
@@ -98,7 +105,6 @@ function DashboardContent({ user }: { user: UserProfile }) {
             sessionEndTime: Timestamp.fromDate(new Date()), // Keep endTime to detect 'recently_closed'
         });
     }
-    setSessionActive(false);
     setActiveSessionId(null);
     setSessionPin('');
     setLecturerLocation(null);
@@ -109,7 +115,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
     let timerInterval: NodeJS.Timeout;
     let pinInterval: NodeJS.Timeout;
 
-    if (sessionActive && sessionEndTime) {
+    if (isSessionActive && sessionEndTime) {
       timerInterval = setInterval(() => {
         if (new Date() > sessionEndTime) {
           endSession();
@@ -125,7 +131,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
       clearInterval(timerInterval);
       clearInterval(pinInterval);
     };
-  }, [sessionActive, sessionEndTime, toast, endSession]);
+  }, [isSessionActive, sessionEndTime, toast, endSession]);
 
   // Effect for lecturers to fetch units
   useEffect(() => {
@@ -152,24 +158,22 @@ function DashboardContent({ user }: { user: UserProfile }) {
     });
 
     return () => unsubscribe();
-  }, [role, user?.uid, firestore, auth, toast]);
+  }, [role, user?.uid, firestore, auth, toast, selectedUnitId]);
 
   // Effect for lecturers to fetch students for the selected unit
   useEffect(() => {
-    if (role !== 'lecturer' || !selectedUnitId) {
+    if (role !== 'lecturer' || !selectedUnit) {
       setStudentsInUnit([]);
       return;
     }
 
-    const studentsQuery = collection(firestore, `units/${selectedUnitId}/enrolledStudents`);
-    const unsubscribe = onSnapshot(studentsQuery, async (snapshot) => {
-        const studentIds = snapshot.docs.map(doc => doc.id);
-        const studentData = await getStudentsFromIds(firestore, studentIds);
+    async function fetchStudents() {
+        const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents || []);
         setStudentsInUnit(studentData);
-    });
+    }
+    fetchStudents();
     
-    return () => unsubscribe();
-  }, [role, selectedUnitId, firestore]);
+  }, [role, selectedUnit, firestore]);
   
   // Effect for lecturers to listen to attendance records for the selected unit
   useEffect(() => {
@@ -201,15 +205,13 @@ function DashboardContent({ user }: { user: UserProfile }) {
     setIsDataLoading(true);
     setFetchError(null);
     
-    const enrolledIds = user.enrolledUnitIds;
-
-    if (!enrolledIds || enrolledIds.length === 0) {
+    if (!user.enrolledUnitIds || user.enrolledUnitIds.length === 0) {
         setStudentUnits([]);
         setIsDataLoading(false);
         return;
     }
 
-    const q = query(collection(firestore, 'units'), where(documentId(), 'in', enrolledIds));
+    const q = query(collection(firestore, 'units'), where(documentId(), 'in', user.enrolledUnitIds));
 
     const unsubscribe = onSnapshot(q, async (querySnapshot) => {
         try {
@@ -264,7 +266,6 @@ function DashboardContent({ user }: { user: UserProfile }) {
           
           studentUnits.forEach(unit => {
               const endTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
-              // We need to check the student's *actual* attendance records for this session
               const studentHasSignedIn = attendanceRecords.some(r => r.sessionId === unit.activeSessionId && r.studentId === user.uid);
 
               if (unit.activeSessionId && endTime && endTime > now) {
@@ -287,19 +288,18 @@ function DashboardContent({ user }: { user: UserProfile }) {
     // Effect to restore session state for lecturer
     useEffect(() => {
         if (role === 'lecturer' && selectedUnit) {
-            if (selectedUnit.activeSessionId && selectedUnit.sessionEndTime) {
-                const endTime = (selectedUnit.sessionEndTime as Timestamp).toDate();
-                if (new Date() < endTime) {
-                    setSessionActive(true);
-                    setActiveSessionId(selectedUnit.activeSessionId);
-                    setSessionEndTime(endTime);
-                    setLecturerLocation(selectedUnit.lecturerLocation || null);
-                    setRadius(selectedUnit.sessionRadius || 50);
-                } else {
-                    endSession();
-                }
+            const currentSessionActive = selectedUnit.activeSessionId && selectedUnit.sessionEndTime && (selectedUnit.sessionEndTime as Timestamp).toDate() > new Date();
+
+            if (currentSessionActive) {
+                setActiveSessionId(selectedUnit.activeSessionId);
+                setSessionEndTime((selectedUnit.sessionEndTime as Timestamp).toDate());
+                setLecturerLocation(selectedUnit.lecturerLocation || null);
+                setRadius(selectedUnit.sessionRadius || 50);
             } else {
-              setSessionActive(false);
+              // This part handles ending a session that has expired on page load
+              if (selectedUnit.activeSessionId) {
+                  endSession();
+              }
               setActiveSessionId(null);
               setSessionEndTime(null);
             }
@@ -307,7 +307,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
     }, [selectedUnit, role, endSession]);
     
   const handleUnitChange = (unitId: string) => {
-    if (sessionActive) {
+    if (isSessionActive) {
       toast({ variant: "destructive", title: "Cannot Change Unit", description: "Please end the active session before changing the unit." });
       return;
     }
@@ -315,7 +315,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
   };
 
   const handleUnitDelete = async (unitId: string) => {
-    const result = await deleteUnitFromDb(unitId);
+    const result = await deleteUnitFromDb(unitId, firestore);
     if (result.success) {
       toast({ title: "Unit Deleted", description: "The unit has been successfully deleted." });
       if (selectedUnitId === unitId) {
@@ -376,7 +376,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
                 studentId,
                 registrationNumber,
                 sessionId,
-                lecturerId,
+                lecturerId, // <-- This was the fix from before
                 timestamp: serverTimestamp(),
                 signInMethod,
                 deviceId,
@@ -475,7 +475,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
         studentId: studentId,
         registrationNumber: student.registrationNumber,
         sessionId: sessionId,
-        lecturerId: lecturerId,
+        lecturerId: lecturerId, // This was the fix from before
         timestamp: serverTimestamp(),
         signInMethod: 'manual',
         status: 'APPROVED', // Manual sign-ins are auto-approved
@@ -506,7 +506,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
 
     const unitRef = doc(firestore, 'units', selectedUnitId);
 
-    if (sessionActive) {
+    if (isSessionActive) {
       await endSession();
     } else {
        if (role === 'lecturer' && !lecturerLocation) {
@@ -526,7 +526,6 @@ function DashboardContent({ user }: { user: UserProfile }) {
 
       setActiveSessionId(newSessionId);
       setSessionEndTime(endTime);
-      setSessionActive(true);
     }
   };
 
@@ -553,7 +552,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
               <h2 className="text-2xl font-bold font-headline">{selectedUnit?.name || "No Unit Selected"}</h2>
               <div className="flex items-center gap-2">
                 <div className="w-full sm:w-auto min-w-64">
-                  <Select onValueChange={handleUnitChange} value={selectedUnitId || ""} disabled={sessionActive}>
+                  <Select onValueChange={handleUnitChange} value={selectedUnitId || ""} disabled={isSessionActive}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a unit" />
                     </SelectTrigger>
@@ -632,3 +631,4 @@ export default function Home() {
     }
     return <DashboardContent user={user} />;
 }
+
