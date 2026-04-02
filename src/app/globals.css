@@ -105,13 +105,13 @@
       left: 0;
       top: 0;
       width: 100%;
-      margin: 2rem;
+      margin: 0;
     }
     .no-print {
       display: none;
     }
     @page {
-      size: auto;
+      size: landscape;
       margin: 1cm;
     }
   }

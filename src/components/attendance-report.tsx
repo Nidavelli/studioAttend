@@ -1,10 +1,12 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Printer, Check, X } from 'lucide-react';
+import { Printer, Check, X, FileDown, Loader2 } from 'lucide-react';
 import type { Student, Unit } from '@/lib/data';
 import { cn } from '@/lib/utils';
 import { AttendSyncIcon } from './icons';
@@ -33,20 +35,60 @@ export function AttendanceReport({
   onManualSignIn: (studentId: string, sessionId: string) => void;
   lecturer: User;
 }) {
+  const [isExporting, setIsExporting] = useState(false);
   
   const handlePrint = () => {
     window.print();
   };
+
+  const handleExportPdf = async () => {
+    setIsExporting(true);
+    const reportElement = document.getElementById('printable-report');
+    
+    if (reportElement) {
+        try {
+            const canvas = await html2canvas(reportElement, { 
+                scale: 2, // Higher scale for better resolution
+                useCORS: true 
+            });
+
+            const pdf = new jsPDF({
+                orientation: 'landscape',
+                unit: 'pt',
+                format: [canvas.width, canvas.height]
+            });
+            
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height);
+            pdf.save(`attendance-report-${unit.code}.pdf`);
+
+        } catch (error) {
+            console.error("Error generating PDF:", error);
+        } finally {
+            setIsExporting(false);
+        }
+    } else {
+        setIsExporting(false);
+    }
+  };
+
 
   const sessionHeaders = unit?.sessionHistory || [];
   if (!unit) return null;
 
   return (
     <div>
-      <div className="flex justify-end mb-4 no-print">
-        <Button onClick={handlePrint}>
+      <div className="flex justify-end gap-2 mb-4 no-print">
+        <Button onClick={handlePrint} disabled={isExporting}>
           <Printer className="mr-2 h-4 w-4" />
           Print Report
+        </Button>
+         <Button onClick={handleExportPdf} disabled={isExporting}>
+          {isExporting ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <FileDown className="mr-2 h-4 w-4" />
+          )}
+          Export PDF
         </Button>
       </div>
       <div id="printable-report">
