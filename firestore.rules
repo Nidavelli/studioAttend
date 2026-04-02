@@ -5,7 +5,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     function isUnitOwner(unitId) {
-      return request.auth != null && get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
+      // Added exists() check for robustness against race conditions
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/units/$(unitId)) &&
+             get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
     }
 
     match /users/{userId} {
@@ -13,16 +16,10 @@ service cloud.firestore {
     }
 
     match /units/{unitId} {
-      // A user can read a unit if they are the lecturer,
-      // or if their user document's 'enrolledUnitIds' array contains the unitId.
-      allow read: if request.auth != null && (
-        resource.data.lecturerId == request.auth.uid ||
-        (
-            exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-            'enrolledUnitIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrolledUnitIds.hasAny([unitId])
-        )
-      );
+      // READ: Allow any authenticated user to read public unit data.
+      // This is required for students to query units by code before enrolling.
+      // Sensitive data is protected in subcollections.
+      allow read: if request.auth != null;
 
       // CREATE: The creating user must set themselves as the lecturerId and initialize fields.
       allow create: if request.auth != null
@@ -58,15 +55,13 @@ service cloud.firestore {
       // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
         
-        // READ: A lecturer can read if their UID matches the lecturerId on the record.
-        // A student can read if their UID matches the studentId on the record.
-        // This rule is safe for queries, get, and list operations.
+        // READ: A lecturer can read any record in their unit. A student can only read their own record.
         allow read: if request.auth != null && (
-          resource.data.lecturerId == request.auth.uid ||
+          isUnitOwner(unitId) || 
           (resource != null && resource.data.studentId == request.auth.uid)
         );
 
-        // CREATE: Students can create a PENDING record for an ACTIVE session.
+        // CREATE: Students can create a PENDING record for an ACTIVE session if they are enrolled.
         // Lecturers can manually add a record.
         allow create: if (
             // STUDENT condition
