@@ -4,11 +4,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check if the user is a lecturer and owns the unit.
-    function isLecturerAndOwner(unitId) {
-      let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-      let unitLecturerId = get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId;
-      return request.auth != null && userRole == 'lecturer' && unitLecturerId == request.auth.uid;
+    // Helper function to check if the requesting user is the owner of the unit.
+    // This no longer checks the 'role' field, avoiding a cross-collection get().
+    function isUnitOwner(unitId) {
+      return request.auth != null && get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
     }
 
     // Allow any authenticated user to read user profiles, but only allow a user to write to their own.
@@ -37,9 +36,8 @@ service cloud.firestore {
                      )
                    );
 
-      // CREATE: Only authenticated users can create units, and they must be the owner.
-      // The `role` check is removed to prevent race conditions on signup.
-      // The client-side UI already prevents non-lecturers from seeing the create button.
+      // CREATE: The creating user must set themselves as the lecturerId.
+      // This is safe because the client-side UI prevents non-lecturers from even seeing the create button.
       allow create: if request.auth != null
                     && request.resource.data.lecturerId == request.auth.uid
                     && request.resource.data.name is string
@@ -48,32 +46,29 @@ service cloud.firestore {
                     && request.resource.data.enrolledStudents.size() == 0
                     && request.resource.data.sessionHistory.size() == 0;
 
-      // Lecturers can update their own units.
-      // Students can ONLY update a unit to add themselves to the enrolledStudents list.
+      // UPDATE: Allow if the user is the owner (lecturer), OR if it's a student self-enrolling.
       allow update: if
         (
-          isLecturerAndOwner(unitId)
+          // Lecturer can update their own unit
+          get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid
         ) || (
-          // Condition for Students: Allow update only for self-enrollment.
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student' &&
+          // Student can only add themselves to the enrolledStudents list.
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enrolledStudents']) &&
           request.resource.data.enrolledStudents.size() == resource.data.enrolledStudents.size() + 1 &&
           request.auth.uid in request.resource.data.enrolledStudents
         );
         
-      // Lecturers can delete their own units.
-      allow delete: if isLecturerAndOwner(unitId);
+      // DELETE: Only the owner (lecturer) can delete.
+      allow delete: if get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
 
       // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
         
         // GET: A lecturer can get any record in their unit. A student can only get their own record.
-        allow get: if request.auth != null && 
-                      (isLecturerAndOwner(unitId) || resource.data.studentId == request.auth.uid);
+        allow get: if request.auth != null && (isUnitOwner(unitId) || resource.data.studentId == request.auth.uid);
 
-        // LIST: Only the lecturer who owns the unit can list all attendance records. 
-        // Students can list their own records via a query constraint.
-        allow list: if isLecturerAndOwner(unitId) || 
+        // LIST: The unit owner can list all records. Students can list their own records via query.
+        allow list: if isUnitOwner(unitId) || 
                       (
                         request.query.where.size() > 0 &&
                         request.query.where[0] == "studentId" &&
@@ -91,17 +86,17 @@ service cloud.firestore {
             request.resource.data.status == 'PENDING'
         ) || (
             // LECTURER condition for manual sign-in
-            isLecturerAndOwner(unitId) && request.resource.data.signInMethod == 'manual'
+            isUnitOwner(unitId) && request.resource.data.signInMethod == 'manual'
         );
         
-        // UPDATE: Only a lecturer can update the status from PENDING to APPROVED/REJECTED.
-        allow update: if isLecturerAndOwner(unitId) &&
+        // UPDATE: Only the unit owner can update status.
+        allow update: if isUnitOwner(unitId) &&
                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
                    resource.data.status == 'PENDING' &&
                    request.resource.data.status in ['APPROVED', 'REJECTED'];
         
-        // Lecturers can delete records from their own unit.
-        allow delete: if isLecturerAndOwner(unitId);
+        // DELETE: Only the unit owner can delete.
+        allow delete: if isUnitOwner(unitId);
       }
     }
   }
