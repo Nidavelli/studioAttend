@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   signInWithEmailAndPassword,
@@ -112,7 +112,7 @@ const PasswordStrengthMeter = ({ password }: { password?: string }) => {
     );
 };
 
-function AuthPageContent() {
+export default function AuthPage() {
   const auth = useAuth();
   const { user, loading: userLoading } = useUserProfile();
   const firestore = useFirestore();
@@ -460,10 +460,4 @@ function AuthPageContent() {
       </Card>
     </div>
   );
-}
-
-export default function AuthPage() {
-    // By removing the Suspense wrapper, we ensure this component and its children
-    // are rendered fully on the client, where the loading screen's animations can run.
-    return <AuthPageContent />;
 }
