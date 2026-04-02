@@ -26,6 +26,9 @@ export async function createUnit(
     return { success: true };
   } catch (error: any) {
     console.error("Error creating unit:", error);
+    if (error.code === 'permission-denied') {
+        return { success: false, error: "Permission denied. Please ensure you are logged in as a lecturer and your security rules are configured correctly." };
+    }
     return { success: false, error: error.message || "Failed to create unit." };
   }
 }

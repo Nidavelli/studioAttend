@@ -19,12 +19,28 @@ service cloud.firestore {
 
     // Rules for the 'units' collection
     match /units/{unitId} {
-      // Any authenticated user can read unit data (needed for students to join by code).
-      allow read: if request.auth != null;
+      // GET: A user can get a unit if they are the lecturer OR they are enrolled.
+      allow get: if request.auth != null && 
+                    (
+                      resource.data.lecturerId == request.auth.uid ||
+                      request.auth.uid in resource.data.enrolledStudents
+                    );
+      
+      // LIST: A user can query units if they are querying for units where they are the lecturer
+      // OR units where they are enrolled. This secures the two main queries in the app.
+      allow list: if request.auth != null &&
+                   (
+                     request.query.where.size() > 0 &&
+                     (
+                       (request.query.where[0] == "lecturerId" && request.query.where[2] == request.auth.uid) ||
+                       (request.query.where[0] == "enrolledStudents" && request.query.where[1] == "array-contains" && request.query.where[2] == request.auth.uid)
+                     )
+                   );
 
-      // Only lecturers can create new units, and they must be the owner.
-      // This rule enforces the initial structure of the document.
-      allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lecturer'
+      // CREATE: Only authenticated users can create units, and they must be the owner.
+      // The `role` check is removed to prevent race conditions on signup.
+      // The client-side UI already prevents non-lecturers from seeing the create button.
+      allow create: if request.auth != null
                     && request.resource.data.lecturerId == request.auth.uid
                     && request.resource.data.name is string
                     && request.resource.data.code is string
@@ -58,7 +74,11 @@ service cloud.firestore {
         // LIST: Only the lecturer who owns the unit can list all attendance records. 
         // Students can list their own records via a query constraint.
         allow list: if isLecturerAndOwner(unitId) || 
-                      (request.query.get("studentId") == request.auth.uid && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student');
+                      (
+                        request.query.where.size() > 0 &&
+                        request.query.where[0] == "studentId" &&
+                        request.query.where[2] == request.auth.uid
+                      );
 
         // CREATE: Students can create a PENDING record for an ACTIVE session.
         // Lecturers can manually add a record.

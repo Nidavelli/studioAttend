@@ -13,7 +13,9 @@ import { useToast } from "@/hooks/use-toast";
 import { haversineDistance } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { deleteUnit as deleteUnitFromDb } from '@/lib/units';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { LoadingScreen } from '@/components/loading-screen';
 
 
 export type GeolocationCoordinates = {
@@ -72,6 +74,7 @@ function DashboardContent() {
 
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   
   const selectedUnit = useMemo(() => {
     const allUnits = role === 'lecturer' ? units : studentUnits;
@@ -129,6 +132,7 @@ function DashboardContent() {
     if (role !== 'lecturer' || !user?.uid) return;
     
     setIsDataLoading(true);
+    setFetchError(null);
     const q = query(collection(firestore, "units"), where("lecturerId", "==", user.uid));
     
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -141,13 +145,14 @@ function DashboardContent() {
     }, (error) => {
         console.error("Error fetching units:", error);
         if (auth.currentUser) {
-          toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch your units.' });
+          toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your units. Check console for details.' });
+          setFetchError("Could not fetch your units. This is likely a Firestore security rule issue. Please ensure you have permissions to read units where you are the lecturer.");
         }
         setIsDataLoading(false);
     });
 
     return () => unsubscribe();
-  }, [role, user?.uid, firestore, auth]);
+  }, [role, user?.uid, firestore, auth, toast]);
 
   // Effect for lecturers to fetch students for the selected unit
   useEffect(() => {
@@ -155,10 +160,8 @@ function DashboardContent() {
       setStudentsInUnit([]);
       return;
     }
-    setIsDataLoading(true);
     getStudentsFromIds(firestore, selectedUnit.enrolledStudents).then(studentData => {
         setStudentsInUnit(studentData);
-        setIsDataLoading(false);
     });
   }, [role, selectedUnit, firestore]);
   
@@ -168,23 +171,21 @@ function DashboardContent() {
         setAttendanceRecords([]);
         return;
       }
-      setIsDataLoading(true);
       const attendanceQuery = query(collection(firestore, `units/${selectedUnitId}/attendance`));
   
       const unsubscribe = onSnapshot(attendanceQuery, (snapshot) => {
           const records: AttendanceRecord[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data()} as AttendanceRecord));
           setAttendanceRecords(records);
-          setIsDataLoading(false);
       }, (error: any) => {
           console.error("Error fetching attendance records:", error);
           if (auth.currentUser && error.code === 'permission-denied') {
             toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
+            setFetchError("Could not sync attendance data. This is likely a Firestore security rule issue.");
           }
-          setIsDataLoading(false);
       });
   
       return () => unsubscribe();
-  }, [role, selectedUnitId, firestore, auth]);
+  }, [role, selectedUnitId, firestore, auth, toast]);
 
 
   // Effect for students to fetch units and their own attendance records
@@ -192,6 +193,7 @@ function DashboardContent() {
       if (role !== 'student' || !user?.uid) return;
       
       setIsDataLoading(true);
+      setFetchError(null);
       const unitsQuery = query(collection(firestore, "units"), where("enrolledStudents", "array-contains", user.uid));
       
       const unsubscribeUnits = onSnapshot(unitsQuery, async (unitsSnapshot) => {
@@ -229,7 +231,8 @@ function DashboardContent() {
       }, (error) => {
           console.error("Error fetching student units:", error);
           if (auth.currentUser) {
-              toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch your units.' });
+              toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your units.' });
+              setFetchError("Could not fetch your units. This may be a Firestore security rule issue.");
           }
           setIsDataLoading(false);
       });
@@ -521,7 +524,7 @@ function DashboardContent() {
     }
   };
 
-  if (userLoading || (isDataLoading && (role === 'lecturer' ? units.length === 0 : studentUnits.length === 0))) {
+  if (isDataLoading) {
       return (
           <div className="container mx-auto p-4 sm:p-6 lg:p-8 space-y-6 mt-8">
               <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
@@ -529,7 +532,7 @@ function DashboardContent() {
                 <Skeleton className="h-10 w-full sm:w-64" />
               </div>
               <div className="space-y-4">
-                <Skeleton className="h-10 w-full max-w-md mx-auto" />
+                <Skeleton className="h-10 w-full max-w-lg mx-auto" />
                 <Skeleton className="h-96 w-full" />
               </div>
           </div>
@@ -561,6 +564,14 @@ function DashboardContent() {
             </div>
           )}
 
+        {fetchError && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Data Fetching Error</AlertTitle>
+            <AlertDescription>{fetchError}</AlertDescription>
+          </Alert>
+        )}
+
           {role === 'student' && user && (
             <StudentView
               units={studentUnits}
@@ -577,7 +588,7 @@ function DashboardContent() {
               lecturer={user}
               allUnits={units}
               students={studentsInUnit}
-              unit={selectedUnit!}
+              unit={selectedUnit}
               attendanceRecords={attendanceRecords}
               isSessionActive={sessionActive}
               onToggleSession={toggleSession}
@@ -611,11 +622,7 @@ export default function Home() {
     }, [user, loading, router]);
 
     if (loading || !user) {
-        return (
-            <div className="flex items-center justify-center h-screen">
-                <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            </div>
-        );
+      return <LoadingScreen text="Verifying authentication..." />;
     }
     return <DashboardContent />;
 }

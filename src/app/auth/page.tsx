@@ -7,7 +7,7 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase/provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -232,10 +232,11 @@ function AuthPageContent() {
         registrationNumber: values.registrationNumber,
         avatarStyle: style,
         avatarSeed: seed,
+        createdAt: serverTimestamp(),
       });
 
-      await user.reload();
-      await handleSignUpSuccess(user);
+      // No need to call user.reload() or handleSignUpSuccess here,
+      // the useUserProfile hook will automatically detect the new user and redirect.
     } catch (error) {
         console.error("Error saving user profile:", error);
         toast({
@@ -248,7 +249,7 @@ function AuthPageContent() {
   };
 
 
-  if (userLoading || isLoading || user) {
+  if (userLoading || isLoading || (!userLoading && user)) {
     return <LoadingScreen text={userLoading ? "Checking session..." : "Setting things up..."}/>;
   }
 

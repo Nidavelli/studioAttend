@@ -13,7 +13,7 @@ import type { Student, Unit, AttendanceRecord } from '@/lib/data';
 import { getAvatarUrl } from '@/lib/avatars';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle, Trash2, Check, X, AlertTriangle } from 'lucide-react';
+import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle, Trash2, Check, X, AlertTriangle, Settings } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import type { GeolocationCoordinates } from '@/app/dashboard/page';
@@ -224,6 +224,13 @@ function UnitManagementTab({ allUnits, lecturer, onDeleteUnit }: { allUnits: Uni
                                 </TableCell>
                             </TableRow>
                         ))}
+                         {allUnits.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={3} className="text-center h-24 text-muted-foreground">
+                                    You have not created any units yet.
+                                </TableCell>
+                            </TableRow>
+                        )}
                     </TableBody>
                 </Table>
             </CardContent>
@@ -255,7 +262,7 @@ export function LecturerDashboard({
   lecturer: User;
   allUnits: Unit[];
   students: Student[];
-  unit: Unit;
+  unit: Unit | null;
   attendanceRecords: AttendanceRecord[];
   isSessionActive: boolean;
   onToggleSession: () => void;
@@ -299,14 +306,6 @@ export function LecturerDashboard({
       return { flaggedDeviceGroups: flagged, singleDeviceRecords: single };
 
   }, [isSessionActive, sessionAttendanceRecords]);
-
-  if (!unit) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center py-10">
-        <UnitManagementTab allUnits={allUnits} lecturer={lecturer} onDeleteUnit={onDeleteUnit} />
-      </div>
-    );
-  }
 
   const handleSetLocation = () => {
     setIsGettingLocation(true);
@@ -352,19 +351,19 @@ export function LecturerDashboard({
     setTimeout(() => setIsCopied(false), 2000);
   };
   
-  const qrCodeValue = isSessionActive ? JSON.stringify({ unitId: unit.id, sessionId: activeSessionId }) : '';
+  const qrCodeValue = isSessionActive && unit ? JSON.stringify({ unitId: unit.id, sessionId: activeSessionId }) : '';
 
   const StatusBadge = ({ status }: { status: AttendanceRecord['status'] }) => {
     const variant = {
         'PENDING': 'default',
         'APPROVED': 'secondary',
         'REJECTED': 'destructive',
-    }[status];
+    }[status] || 'default';
     const text = {
         'PENDING': 'Pending Review',
         'APPROVED': 'Approved',
         'REJECTED': 'Rejected',
-    }[status];
+    }[status] || 'Unknown';
     return <Badge variant={variant as any}>{text}</Badge>
   }
   
@@ -382,14 +381,24 @@ export function LecturerDashboard({
     );
   };
 
+  if (!unit) {
+    return (
+      <div className="space-y-6 mt-4 md:mt-8">
+        <UnitManagementTab allUnits={allUnits} lecturer={lecturer} onDeleteUnit={onDeleteUnit} />
+      </div>
+    );
+  }
+
+
   return (
     <div className="space-y-6 mt-4 md:mt-8">
     <Tabs defaultValue="session">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="session">Session Control</TabsTrigger>
             <TabsTrigger value="review">Session Review</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="grid">Attendance Grid</TabsTrigger>
+            <TabsTrigger value="management"><Settings className="h-4 w-4"/></TabsTrigger>
         </TabsList>
         <TabsContent value="session" className="mt-6">
             <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
@@ -530,7 +539,7 @@ export function LecturerDashboard({
                    {isSessionActive ? (
                     <>
                     {flaggedDeviceGroups.map((records, index) => (
-                        <Card key={index} className="bg-amber-50 border-amber-200">
+                        <Card key={index} className="bg-amber-50 border-amber-200 dark:bg-amber-950/50 dark:border-amber-800">
                              <CardHeader>
                                 <CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="text-amber-600"/> Device Sharing Flagged</CardTitle>
                                 <CardDescription>Device ID: <span className="font-mono text-xs">{records[0].deviceId}</span></CardDescription>
