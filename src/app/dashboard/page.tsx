@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserProfile, type UserProfile } from '@/hooks/use-user-profile';
 import { useAuth, useFirestore } from '@/firebase/provider';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc, writeBatch, documentId } from 'firebase/firestore';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -168,8 +168,12 @@ function DashboardContent({ user }: { user: UserProfile }) {
     }
 
     async function fetchStudents() {
-        const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents || []);
-        setStudentsInUnit(studentData);
+        if (selectedUnit?.enrolledStudents && selectedUnit.enrolledStudents.length > 0) {
+            const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents);
+            setStudentsInUnit(studentData);
+        } else {
+            setStudentsInUnit([]);
+        }
     }
     fetchStudents();
     
@@ -244,7 +248,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
         }
     }, (error) => {
         console.error("Error fetching student units:", error);
-        if (auth.currentUser) {
+        if (auth.currentUser && error.code === 'permission-denied') {
             toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your units.' });
             setFetchError("Could not fetch your units. This may be a Firestore security rule issue.");
         }
@@ -632,3 +636,6 @@ export default function Home() {
     return <DashboardContent user={user} />;
 }
 
+
+
+    
