@@ -17,7 +17,6 @@ export type Unit = {
   lecturerId: string;
   attendanceThreshold: number;
   sessionHistory: string[]; // Array of session IDs
-  enrolledStudents: string[]; // Array of student UIDs
   activeSessionId?: string | null;
   sessionEndTime?: any | null; // Firestore Timestamp
   lecturerLocation?: { lat: number, lng: number };

@@ -82,14 +82,6 @@ function DashboardContent({ user }: { user: UserProfile }) {
     return allUnits.find(u => u.id === selectedUnitId) || null;
   }, [units, studentUnits, selectedUnitId, role]);
 
-  const [sessionPin, setSessionPin] = useState<string>('');
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [sessionDuration, setSessionDuration] = useState<number>(15);
-  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
-  
-  const [lecturerLocation, setLecturerLocation] = useState<GeolocationCoordinates | null>(null);
-  const [radius, setRadius] = useState<number>(50);
-
   const isSessionActive = useMemo(() => {
     if (!selectedUnit?.activeSessionId || !selectedUnit?.sessionEndTime) {
       return false;
@@ -97,6 +89,14 @@ function DashboardContent({ user }: { user: UserProfile }) {
     const endTime = (selectedUnit.sessionEndTime as Timestamp).toDate();
     return endTime > new Date();
   }, [selectedUnit]);
+  
+  const [sessionPin, setSessionPin] = useState<string>('');
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionDuration, setSessionDuration] = useState<number>(15);
+  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
+  
+  const [lecturerLocation, setLecturerLocation] = useState<GeolocationCoordinates | null>(null);
+  const [radius, setRadius] = useState<number>(50);
 
   const endSession = useCallback(async () => {
     if (selectedUnitId) {
@@ -163,22 +163,31 @@ function DashboardContent({ user }: { user: UserProfile }) {
 
   // Effect for lecturers to fetch students for the selected unit
   useEffect(() => {
-    if (role !== 'lecturer' || !selectedUnit) {
+    if (role !== 'lecturer' || !selectedUnitId) {
       setStudentsInUnit([]);
       return;
     }
 
-    async function fetchStudents() {
-        if (selectedUnit?.enrolledStudents && selectedUnit.enrolledStudents.length > 0) {
-            const studentData = await getStudentsFromIds(firestore, selectedUnit.enrolledStudents);
+    const studentsQuery = query(collection(firestore, `units/${selectedUnitId}/enrolledStudents`));
+
+    const unsubscribe = onSnapshot(studentsQuery, async (snapshot) => {
+        const studentIds = snapshot.docs.map(doc => doc.id);
+        if (studentIds.length > 0) {
+            const studentData = await getStudentsFromIds(firestore, studentIds);
             setStudentsInUnit(studentData);
         } else {
             setStudentsInUnit([]);
         }
-    }
-    fetchStudents();
+    }, (error: any) => {
+        console.error("Error fetching students in unit:", error);
+        if (auth.currentUser && error.code === 'permission-denied') {
+            toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync student list.' });
+        }
+    });
     
-  }, [role, selectedUnit, firestore]);
+    return () => unsubscribe();
+    
+  }, [role, selectedUnitId, firestore, auth, toast]);
   
   // Effect for BOTH lecturers and students to listen to relevant attendance records
   useEffect(() => {
@@ -664,7 +673,3 @@ export default function Home() {
     }
     return <DashboardContent user={user} />;
 }
-
-
-
-    
