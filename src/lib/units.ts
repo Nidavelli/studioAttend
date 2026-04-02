@@ -1,6 +1,5 @@
 
-
-import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction, updateDoc, arrayUnion, deleteDoc, writeBatch, setDoc, getDoc } from "firebase/firestore";
+import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction, updateDoc, arrayUnion, deleteDoc, writeBatch, setDoc, getDoc, arrayRemove } from "firebase/firestore";
 import { firebaseApp } from "@/firebase/config";
 
 const db = getFirestore(firebaseApp);
@@ -19,7 +18,6 @@ export async function createUnit(
       code: unitCode,
       lecturerId: lecturerId,
       attendanceThreshold: attendanceThreshold,
-      enrolledStudents: [], // Initialize enrolled students array
       sessionHistory: [],
       createdAt: serverTimestamp(),
     });
@@ -50,25 +48,28 @@ export async function joinUnit(
 
     const unitDoc = querySnapshot.docs[0];
     const unitId = unitDoc.id;
-    const unitData = unitDoc.data();
     
     const userRef = doc(db, 'users', studentId);
 
-    // Check if student is already enrolled in the unit's array
-    if (unitData.enrolledStudents && unitData.enrolledStudents.includes(studentId)) {
-      throw new Error("You are already enrolled in this unit.");
-    }
-
     await runTransaction(db, async (transaction) => {
-        const userDoc = await transaction.get(userRef);
-        if (!userDoc.exists()) {
-            throw new Error("User profile does not exist.");
+        const userDocSnap = await transaction.get(userRef);
+        if (!userDocSnap.exists()) {
+            throw new Error("Your user profile could not be found. Cannot join unit.");
         }
-        
-        // Atomically update both documents
-        transaction.update(unitDoc.ref, {
-            enrolledStudents: arrayUnion(studentId)
+
+        const enrollmentRef = doc(db, "units", unitId, "enrolledStudents", studentId);
+        const enrollmentDoc = await transaction.get(enrollmentRef);
+        if (enrollmentDoc.exists()) {
+             throw new Error("You are already enrolled in this unit.");
+        }
+
+        // Create the enrollment document in the subcollection
+        transaction.set(enrollmentRef, {
+            studentId: studentId,
+            enrolledAt: serverTimestamp(),
         });
+        
+        // Update the user's document with the enrolled unit ID
         transaction.update(userRef, {
             enrolledUnitIds: arrayUnion(unitId)
         });
@@ -78,7 +79,7 @@ export async function joinUnit(
   } catch (error: any)
   {
     console.error("Error joining unit:", error);
-    return { success: false, error: error.message || "Failed to join unit." };
+    return { success: false, error: error.message || "Failed to join unit. Check permissions." };
   }
 }
 
@@ -95,22 +96,22 @@ export async function deleteUnit(
 ): Promise<{ success: boolean; error?: string; }> {
   try {
     const unitRef = doc(firestore, 'units', unitId);
-    const unitSnap = await getDoc(unitRef);
-
-    if (!unitSnap.exists()) {
-      throw new Error("Unit not found.");
-    }
-
-    const enrolledStudents = unitSnap.data().enrolledStudents || [];
     
     const batch = writeBatch(firestore);
 
+    // Query the enrolledStudents sub-collection to get all student IDs
+    const enrollmentsRef = collection(firestore, 'units', unitId, 'enrolledStudents');
+    const enrollmentsSnapshot = await getDocs(enrollmentsRef);
+    
     // For each enrolled student, remove the unitId from their enrolledUnitIds array
-    enrolledStudents.forEach((studentId: string) => {
+    enrollmentsSnapshot.docs.forEach((enrollmentDoc) => {
+        const studentId = enrollmentDoc.id;
         const userRef = doc(firestore, 'users', studentId);
         batch.update(userRef, {
-            enrolledUnitIds: arrayUnion(unitId) // Note: This should be arrayRemove, will be fixed in rules
+            enrolledUnitIds: arrayRemove(unitId)
         });
+        // Also delete the enrollment document itself
+        batch.delete(enrollmentDoc.ref);
     });
 
     // Delete all attendance records in the subcollection

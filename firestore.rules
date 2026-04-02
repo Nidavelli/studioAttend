@@ -27,8 +27,7 @@ service cloud.firestore {
                     && request.resource.data.lecturerId == request.auth.uid
                     && request.resource.data.name is string
                     && request.resource.data.code is string
-                    && request.resource.data.attendanceThreshold is number
-                    && request.resource.data.sessionHistory.size() == 0;
+                    && request.resource.data.attendanceThreshold is number;
 
       // UPDATE: Only the owner (lecturer) can update the main unit document.
       allow update: if isUnitOwner(unitId);
@@ -39,7 +38,7 @@ service cloud.firestore {
       // Subcollection for enrolled students
       match /enrolledStudents/{studentId} {
         // READ: A user can read an enrollment doc if they are the lecturer of the unit, OR it is their own enrollment.
-        allow get: if isUnitOwner(unitId) || request.auth.uid == studentId;
+        allow read: if isUnitOwner(unitId) || request.auth.uid == studentId;
         
         // LIST: Only the lecturer can list all enrollments for their unit.
         allow list: if isUnitOwner(unitId);
@@ -62,14 +61,14 @@ service cloud.firestore {
           (resource.data.studentId == request.auth.uid)
         );
 
-        // LIST: The lecturer can list all. A student can only list their own records.
-        allow list: if request.auth != null && 
+        // LIST: The owner of the unit can list all attendance records.
+        // A student can list their own records.
+        allow list: if request.auth != null &&
           (
             isUnitOwner(unitId) ||
-            request.query.where.size() > 0 &&
-            request.query.where[0][0] == 'studentId' &&
-            request.query.where[0][1] == '==' &&
-            request.query.where[0][2] == request.auth.uid
+            (request.query.where[0][0] == 'studentId' &&
+             request.query.where[0][1] == '==' &&
+             request.query.where[0][2] == request.auth.uid)
           );
 
         // CREATE: Students can create a PENDING record for an ACTIVE session.
