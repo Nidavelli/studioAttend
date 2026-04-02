@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserProfile, type UserProfile } from '@/hooks/use-user-profile';
 import { useAuth, useFirestore } from '@/firebase/provider';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc, collectionGroup, documentId } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc, collectionGroup, documentId, type QuerySnapshot, type DocumentData } from 'firebase/firestore';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -201,36 +201,19 @@ function DashboardContent({ user }: { user: UserProfile }) {
     setIsDataLoading(true);
     setFetchError(null);
     
-    // This query finds all the 'enrollment' documents for the current student.
-    const enrollmentsQuery = query(collectionGroup(firestore, 'enrolledStudents'), where('studentId', '==', user.uid));
-    
-    const unsubscribeEnrollments = onSnapshot(enrollmentsQuery, async (enrollmentsSnapshot) => {
-        if (enrollmentsSnapshot.empty) {
-            setStudentUnits([]);
-            setIsDataLoading(false);
-            return;
-        }
+    const enrolledIds = user.enrolledUnitIds;
 
-        const unitIds = enrollmentsSnapshot.docs.map(doc => doc.ref.parent.parent!.id);
+    if (!enrolledIds || enrolledIds.length === 0) {
+        setStudentUnits([]);
+        setIsDataLoading(false);
+        return;
+    }
 
-        if (unitIds.length === 0) {
-            setStudentUnits([]);
-            setIsDataLoading(false);
-            return;
-        }
+    const q = query(collection(firestore, 'units'), where(documentId(), 'in', enrolledIds));
 
-        // Now fetch the actual unit documents for the IDs we found.
-        // We have to batch this in groups of 30 for Firestore 'in' query limitations.
-        const unitPromises = [];
-        for (let i = 0; i < unitIds.length; i += 30) {
-            const batchIds = unitIds.slice(i, i + 30);
-            const unitsQuery = query(collection(firestore, 'units'), where(documentId(), 'in', batchIds));
-            unitPromises.push(getDocs(unitsQuery));
-        }
-
+    const unsubscribe = onSnapshot(q, async (querySnapshot) => {
         try {
-            const unitSnapshots = await Promise.all(unitPromises);
-            const fetchedUnits: Unit[] = unitSnapshots.flatMap(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Unit)));
+            const fetchedUnits: Unit[] = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Unit));
 
             const attendancePromises = fetchedUnits.map(unit => {
                 const attendanceQuery = query(
@@ -252,25 +235,22 @@ function DashboardContent({ user }: { user: UserProfile }) {
             
             setStudentUnits(unitsWithAttendance);
         } catch (error) {
-            console.error("Error fetching student units:", error);
-            if (auth.currentUser) {
-                toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your units.' });
-                setFetchError("Could not fetch your units. This may be a Firestore security rule issue.");
-            }
+            console.error("Error processing student units:", error);
+            toast({ variant: 'destructive', title: 'Data Error', description: 'Could not process your unit data.' });
         } finally {
             setIsDataLoading(false);
         }
     }, (error) => {
-        console.error("Error fetching student enrollments:", error);
+        console.error("Error fetching student units:", error);
         if (auth.currentUser) {
-            toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your enrollments.' });
-            setFetchError("Could not fetch your enrollments. This may be a Firestore security rule issue. An index might be required.");
+            toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your units.' });
+            setFetchError("Could not fetch your units. This may be a Firestore security rule issue.");
         }
         setIsDataLoading(false);
     });
 
-    return () => unsubscribeEnrollments();
-}, [role, user?.uid, firestore, toast, auth]);
+    return () => unsubscribe();
+}, [role, user?.uid, user.enrolledUnitIds, firestore, toast, auth]);
 
 
   // Effect to manage unit statuses for students over time

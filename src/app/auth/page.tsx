@@ -120,7 +120,7 @@ export default function AuthPage() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start loading immediately
 
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
@@ -140,8 +140,12 @@ export default function AuthPage() {
   }, [searchParams, toast]);
 
   useEffect(() => {
-    if (!userLoading && user) {
+    if (!userLoading) {
+      if (user) {
         router.push('/dashboard');
+      } else {
+        setIsLoading(false); // Only stop loading if user is not logged in
+      }
     }
   }, [user, userLoading, router]);
 
@@ -162,14 +166,6 @@ export default function AuthPage() {
     toast({
       title: 'Login Successful',
       description: `Welcome back, ${user.displayName || user.email}!`,
-    });
-    router.push('/dashboard');
-  };
-
-  const handleSignUpSuccess = async (user: any) => {
-    toast({
-      title: 'Sign Up Successful!',
-      description: `Welcome, ${user.displayName}!`,
     });
     router.push('/dashboard');
   };
@@ -233,6 +229,7 @@ export default function AuthPage() {
         avatarStyle: style,
         avatarSeed: seed,
         createdAt: serverTimestamp(),
+        enrolledUnitIds: [], // Initialize enrolled units array
       });
 
       // The useUserProfile hook will automatically detect the new user and trigger the redirect useEffect.
@@ -249,8 +246,8 @@ export default function AuthPage() {
   };
 
 
-  if (userLoading || isLoading || (!userLoading && user)) {
-    return <LoadingScreen text={isLoading ? "Setting things up..." : "Checking session..."}/>;
+  if (isLoading) {
+    return <LoadingScreen text={userLoading ? "Checking session..." : "Setting things up..."}/>;
   }
 
   return (

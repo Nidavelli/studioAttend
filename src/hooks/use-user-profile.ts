@@ -12,6 +12,7 @@ export interface UserProfile extends AuthUser {
   registrationNumber: string;
   avatarStyle?: string;
   avatarSeed?: string;
+  enrolledUnitIds?: string[];
 }
 
 export function useUserProfile() {
@@ -44,14 +45,17 @@ export function useUserProfile() {
           registrationNumber: profileData.registrationNumber,
           avatarStyle: profileData.avatarStyle,
           avatarSeed: profileData.avatarSeed,
+          enrolledUnitIds: profileData.enrolledUnitIds || [],
         });
       } else {
+        // This case might happen if the user doc hasn't been created yet
         setUserProfile({
           ...authUser,
           name: authUser.displayName!,
           email: authUser.email!,
-          role: 'student',
+          role: 'student', // default assumption
           registrationNumber: '',
+          enrolledUnitIds: [],
         });
       }
       setLoading(false);
@@ -63,6 +67,7 @@ export function useUserProfile() {
         email: authUser.email!,
         role: 'student',
         registrationNumber: '',
+        enrolledUnitIds: [],
       });
       setLoading(false);
     });

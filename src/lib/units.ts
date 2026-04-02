@@ -49,10 +49,9 @@ export async function joinUnit(
     const unitDoc = querySnapshot.docs[0];
     const unitId = unitDoc.id;
 
-    // Use setDoc with the student's UID as the document ID.
     const enrollmentRef = doc(db, `units/${unitId}/enrolledStudents`, studentId);
-    
-    // Use a transaction to check for existence and write atomically.
+    const userRef = doc(db, 'users', studentId);
+
     await runTransaction(db, async (transaction) => {
         const enrollmentSnap = await transaction.get(enrollmentRef);
 
@@ -60,11 +59,15 @@ export async function joinUnit(
             throw new Error("You are already enrolled in this unit.");
         }
 
-        // The document ID is already the studentId from the path,
-        // but storing it in the document is good practice for collectionGroup queries.
+        // 1. Create enrollment document in subcollection
         transaction.set(enrollmentRef, {
             studentId: studentId,
             enrolledAt: serverTimestamp()
+        });
+
+        // 2. Update the user's document with the new unitId
+        transaction.update(userRef, {
+            enrolledUnitIds: arrayUnion(unitId)
         });
     });
 
