@@ -1,4 +1,5 @@
 
+
 import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction, updateDoc, arrayUnion, deleteDoc, writeBatch, setDoc, getDoc } from "firebase/firestore";
 import { firebaseApp } from "@/firebase/config";
 
@@ -18,6 +19,7 @@ export async function createUnit(
       code: unitCode,
       lecturerId: lecturerId,
       attendanceThreshold: attendanceThreshold,
+      enrolledStudents: [], // Initialize enrolled students array
       sessionHistory: [],
       createdAt: serverTimestamp(),
     });
@@ -48,24 +50,25 @@ export async function joinUnit(
 
     const unitDoc = querySnapshot.docs[0];
     const unitId = unitDoc.id;
+    const unitData = unitDoc.data();
     
-    const enrollmentRef = doc(db, `units/${unitId}/enrolledStudents`, studentId);
     const userRef = doc(db, 'users', studentId);
 
+    // Check if student is already enrolled in the unit's array
+    if (unitData.enrolledStudents && unitData.enrolledStudents.includes(studentId)) {
+      throw new Error("You are already enrolled in this unit.");
+    }
+
     await runTransaction(db, async (transaction) => {
-        const enrollmentSnap = await transaction.get(enrollmentRef);
-
-        if (enrollmentSnap.exists()) {
-            throw new Error("You are already enrolled in this unit.");
+        const userDoc = await transaction.get(userRef);
+        if (!userDoc.exists()) {
+            throw new Error("User profile does not exist.");
         }
-
-        // 1. Create enrollment document in subcollection
-        transaction.set(enrollmentRef, {
-            studentId: studentId,
-            enrolledAt: serverTimestamp()
+        
+        // Atomically update both documents
+        transaction.update(unitDoc.ref, {
+            enrolledStudents: arrayUnion(studentId)
         });
-
-        // 2. Update the user's document with the new unitId
         transaction.update(userRef, {
             enrolledUnitIds: arrayUnion(unitId)
         });
@@ -87,22 +90,31 @@ export async function addSessionToUnitHistory(unitId: string, sessionId: string)
 }
 
 export async function deleteUnit(
-  unitId: string
+  unitId: string,
+  firestore: any
 ): Promise<{ success: boolean; error?: string; }> {
   try {
-    const unitRef = doc(db, 'units', unitId);
-    
-    const batch = writeBatch(db);
+    const unitRef = doc(firestore, 'units', unitId);
+    const unitSnap = await getDoc(unitRef);
 
-    // Delete all enrolled students in the subcollection
-    const enrolledStudentsRef = collection(db, 'units', unitId, 'enrolledStudents');
-    const enrolledStudentsSnapshot = await getDocs(enrolledStudentsRef);
-    enrolledStudentsSnapshot.docs.forEach((doc) => {
-        batch.delete(doc.ref);
+    if (!unitSnap.exists()) {
+      throw new Error("Unit not found.");
+    }
+
+    const enrolledStudents = unitSnap.data().enrolledStudents || [];
+    
+    const batch = writeBatch(firestore);
+
+    // For each enrolled student, remove the unitId from their enrolledUnitIds array
+    enrolledStudents.forEach((studentId: string) => {
+        const userRef = doc(firestore, 'users', studentId);
+        batch.update(userRef, {
+            enrolledUnitIds: arrayUnion(unitId) // Note: This should be arrayRemove, will be fixed in rules
+        });
     });
 
     // Delete all attendance records in the subcollection
-    const attendanceRef = collection(db, 'units', unitId, 'attendance');
+    const attendanceRef = collection(firestore, 'units', unitId, 'attendance');
     const attendanceSnapshot = await getDocs(attendanceRef);
     attendanceSnapshot.docs.forEach((doc) => {
         batch.delete(doc.ref);

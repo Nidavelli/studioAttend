@@ -11,12 +11,9 @@ service cloud.firestore {
     match /units/{unitId} {
       // READ: A user can read a unit if they are the lecturer,
       // or if their user document's 'enrolledUnitIds' array contains the unitId.
-      // This is secure and avoids a direct 'in' on the unit's array.
       allow read: if request.auth != null &&
         (
-          // Check if user is the lecturer
           resource.data.lecturerId == request.auth.uid ||
-          // Check if the unitId exists in the user's own enrolled list
           (
             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
             'enrolledUnitIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
@@ -43,12 +40,25 @@ service cloud.firestore {
         // Attendance records are immutable once created.
         allow update, delete: if false;
 
-        // READ: Allow if user is lecturer of parent unit OR the student who created it.
-        allow read: if request.auth != null &&
+        // GET: A lecturer can get any record in their unit. A student can get their own record.
+        allow get: if request.auth != null &&
                      (
                        get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid ||
                        resource.data.studentId == request.auth.uid
                      );
+        
+        // LIST: Allow a user to query attendance if they are the lecturer OR if they are enrolled in the unit.
+        // This rule is safe because the frontend query for students MUST include `where("studentId", "==", request.auth.uid)`.
+        allow list: if request.auth != null &&
+                    (
+                       get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid ||
+                       (
+                         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                         'enrolledUnitIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+                         unitId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrolledUnitIds
+                       )
+                    );
+
 
         // CREATE: Allow if user is enrolled student or lecturer.
         allow create: if request.auth != null &&

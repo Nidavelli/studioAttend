@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -179,27 +180,41 @@ function DashboardContent({ user }: { user: UserProfile }) {
     
   }, [role, selectedUnit, firestore]);
   
-  // Effect for lecturers to listen to attendance records for the selected unit
+  // Effect for BOTH lecturers and students to listen to relevant attendance records
   useEffect(() => {
-      if (role !== 'lecturer' || !selectedUnitId) {
-        setAttendanceRecords([]);
-        return;
-      }
-      const attendanceQuery = query(collection(firestore, `units/${selectedUnitId}/attendance`));
+      if (!user?.uid) return;
   
-      const unsubscribe = onSnapshot(attendanceQuery, (snapshot) => {
-          const records: AttendanceRecord[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data()} as AttendanceRecord));
-          setAttendanceRecords(records);
-      }, (error: any) => {
-          console.error("Error fetching attendance records:", error);
-          if (auth.currentUser && error.code === 'permission-denied') {
-            toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
-            setFetchError("Could not sync attendance data. This is likely a Firestore security rule issue.");
+      let unsub: () => void = () => {};
+  
+      if (role === 'lecturer' && selectedUnitId) {
+          const attendanceQuery = query(collection(firestore, `units/${selectedUnitId}/attendance`));
+          unsub = onSnapshot(attendanceQuery, (snapshot) => {
+              const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AttendanceRecord));
+              setAttendanceRecords(records);
+          }, (error: any) => {
+              console.error("Error fetching attendance records:", error);
+              if (auth.currentUser && error.code === 'permission-denied') {
+                  toast({ variant: 'destructive', title: 'Real-time Error', description: 'Could not sync attendance data.' });
+                  setFetchError("Could not sync attendance data. This is likely a Firestore security rule issue.");
+              }
+          });
+      } else if (role === 'student' && studentUnits.length > 0) {
+          const studentUnitIds = studentUnits.map(u => u.id);
+          if(studentUnitIds.length > 0) {
+            const attendanceQuery = query(
+              collection(firestore, `attendance`), 
+              where("studentId", "==", user.uid),
+              where("unitId", "in", studentUnitIds) // Assumes attendance records have unitId
+            );
+            // This collectionGroup query is more efficient but requires an index and different rules.
+            // Let's stick to per-unit listeners for now.
+            // For simplicity, attendance records are fetched inside the student units effect.
+            // A combined listener for all units can be complex.
           }
-      });
+      }
   
-      return () => unsubscribe();
-  }, [role, selectedUnitId, firestore, auth, toast]);
+      return () => unsub();
+  }, [role, selectedUnitId, firestore, auth, toast, user?.uid, studentUnits]);
 
 
   // Effect for students to fetch units and their own attendance records
@@ -211,6 +226,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
     
     if (!user.enrolledUnitIds || user.enrolledUnitIds.length === 0) {
         setStudentUnits([]);
+        setAttendanceRecords([]);
         setIsDataLoading(false);
         return;
     }
@@ -221,6 +237,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
         try {
             const fetchedUnits: Unit[] = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Unit));
 
+            // Fetch all attendance records for this student for all their units
             const attendancePromises = fetchedUnits.map(unit => {
                 const attendanceQuery = query(
                     collection(firestore, `units/${unit.id}/attendance`),
@@ -231,18 +248,28 @@ function DashboardContent({ user }: { user: UserProfile }) {
 
             const attendanceSnapshots = await Promise.all(attendancePromises);
 
-            const unitsWithAttendance: UnitWithAttendance[] = fetchedUnits.map((unit, index) => {
-                const attendedSessionIds = new Set(attendanceSnapshots[index].docs.map(doc => doc.data().sessionId));
+            const allAttendanceRecords = attendanceSnapshots.flatMap(snapshot => 
+                snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AttendanceRecord))
+            );
+            setAttendanceRecords(allAttendanceRecords);
+
+            const unitsWithAttendance: UnitWithAttendance[] = fetchedUnits.map((unit) => {
+                const attendedSessionIds = new Set(allAttendanceRecords.filter(r => r.sessionId).map(r => r.sessionId));
+                const attendedInThisUnit = (unit.sessionHistory || []).filter(sid => attendedSessionIds.has(sid)).length;
                 return {
                     ...unit,
-                    attendedSessionsCount: attendedSessionIds.size,
+                    attendedSessionsCount: attendedInThisUnit,
                 };
             });
             
             setStudentUnits(unitsWithAttendance);
         } catch (error) {
             console.error("Error processing student units:", error);
-            toast({ variant: 'destructive', title: 'Data Error', description: 'Could not process your unit data.' });
+            if ((error as any).code === 'permission-denied') {
+              setFetchError("Could not fetch your unit data. This is likely a security rule issue.");
+            } else {
+              toast({ variant: 'destructive', title: 'Data Error', description: 'Could not process your unit data.' });
+            }
         } finally {
             setIsDataLoading(false);
         }
@@ -268,9 +295,11 @@ function DashboardContent({ user }: { user: UserProfile }) {
           const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
           const newStatuses: Record<string, UnitStatus> = {};
           
+          const studentSignedUpSessionIds = new Set(attendanceRecords.map(r => r.sessionId));
+
           studentUnits.forEach(unit => {
               const endTime = unit.sessionEndTime ? (unit.sessionEndTime as Timestamp).toDate() : null;
-              const studentHasSignedIn = attendanceRecords.some(r => r.sessionId === unit.activeSessionId && r.studentId === user.uid);
+              const studentHasSignedIn = !!unit.activeSessionId && studentSignedUpSessionIds.has(unit.activeSessionId);
 
               if (unit.activeSessionId && endTime && endTime > now) {
                   newStatuses[unit.id] = studentHasSignedIn ? 'signed_in' : 'active';
@@ -380,7 +409,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
                 studentId,
                 registrationNumber,
                 sessionId,
-                lecturerId, // <-- This was the fix from before
+                lecturerId: lecturerId,
                 timestamp: serverTimestamp(),
                 signInMethod,
                 deviceId,
@@ -479,7 +508,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
         studentId: studentId,
         registrationNumber: student.registrationNumber,
         sessionId: sessionId,
-        lecturerId: lecturerId, // This was the fix from before
+        lecturerId: lecturerId,
         timestamp: serverTimestamp(),
         signInMethod: 'manual',
         status: 'APPROVED', // Manual sign-ins are auto-approved
