@@ -95,11 +95,26 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js').then(registration => {
+          console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        }, err => {
+          console.log('ServiceWorker registration failed: ', err);
+        });
+      });
+    }
+  }, []);
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <title>AttendSync</title>
         <meta name="description" content="A modern attendance tracking system." />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#3A245B" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Kaisei+HarunoUmi:wght@400;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet" />

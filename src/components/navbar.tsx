@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, Download } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { getAvatarUrl } from '@/lib/avatars';
 import {
@@ -95,15 +95,31 @@ export function Navbar() {
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   useEffect(() => {
     setIsMounted(true);
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
   const handleSignOut = async () => {
     window.dispatchEvent(new CustomEvent('routeChangeStart'));
     await signOut(auth);
     // The loading state will handle the redirect feel
+  };
+  
+  const handleInstallClick = async () => {
+    if (!installPrompt) {
+      return;
+    }
+    const result = await installPrompt.prompt();
+    console.log(`Install prompt was: ${result.outcome}`);
+    setInstallPrompt(null);
   };
 
   const handleLinkClick = () => {
@@ -148,6 +164,12 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {installPrompt && isMounted && (
+            <Button size="sm" onClick={handleInstallClick}>
+              <Download className="mr-2 h-4 w-4" />
+              Install
+            </Button>
+          )}
           {isMounted ? <ThemeToggle /> : <Skeleton className="h-10 w-10" />}
           
           <div className="hidden md:flex items-center gap-2">
