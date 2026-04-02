@@ -1,5 +1,5 @@
 
-import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction, updateDoc, arrayUnion, deleteDoc, writeBatch } from "firebase/firestore";
+import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, doc, runTransaction, updateDoc, arrayUnion, deleteDoc, writeBatch, setDoc, getDoc } from "firebase/firestore";
 import { firebaseApp } from "@/firebase/config";
 
 const db = getFirestore(firebaseApp);
@@ -18,7 +18,6 @@ export async function createUnit(
       code: unitCode,
       lecturerId: lecturerId,
       attendanceThreshold: attendanceThreshold,
-      enrolledStudents: [],
       sessionHistory: [],
       createdAt: serverTimestamp(),
     });
@@ -47,23 +46,19 @@ export async function joinUnit(
       return { success: false, error: "Unit with this code not found." };
     }
 
-    const unitDocRef = querySnapshot.docs[0].ref;
+    const unitDoc = querySnapshot.docs[0];
+    const unitId = unitDoc.id;
 
-    await runTransaction(db, async (transaction) => {
-      const unitDoc = await transaction.get(unitDocRef);
-      if (!unitDoc.exists()) {
-        throw new Error("Unit document not found.");
-      }
+    const enrollmentRef = doc(db, `units/${unitId}/enrolledStudents`, studentId);
+    const enrollmentSnap = await getDoc(enrollmentRef);
 
-      const unitData = unitDoc.data();
-      const currentEnrolledStudents = unitData.enrolledStudents || [];
-      
-      if (currentEnrolledStudents.includes(studentId)) {
+    if (enrollmentSnap.exists()) {
         throw new Error("You are already enrolled in this unit.");
-      }
-      
-      const newEnrolledStudents = [...currentEnrolledStudents, studentId];
-      transaction.update(unitDocRef, { enrolledStudents: newEnrolledStudents });
+    }
+    
+    await setDoc(enrollmentRef, {
+        studentId: studentId,
+        enrolledAt: serverTimestamp()
     });
 
     return { success: true };
@@ -85,18 +80,27 @@ export async function deleteUnit(
 ): Promise<{ success: boolean; error?: string; }> {
   try {
     const unitRef = doc(db, 'units', unitId);
-    const attendanceRef = collection(db, 'units', unitId, 'attendance');
+    
+    const batch = writeBatch(db);
+
+    // Delete all enrolled students in the subcollection
+    const enrolledStudentsRef = collection(db, 'units', unitId, 'enrolledStudents');
+    const enrolledStudentsSnapshot = await getDocs(enrolledStudentsRef);
+    enrolledStudentsSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+    });
 
     // Delete all attendance records in the subcollection
+    const attendanceRef = collection(db, 'units', unitId, 'attendance');
     const attendanceSnapshot = await getDocs(attendanceRef);
-    const batch = writeBatch(db);
     attendanceSnapshot.docs.forEach((doc) => {
         batch.delete(doc.ref);
     });
-    await batch.commit();
-
+    
     // Delete the unit document itself
-    await deleteDoc(unitRef);
+    batch.delete(unitRef);
+
+    await batch.commit();
 
     return { success: true };
   } catch (error: any) {

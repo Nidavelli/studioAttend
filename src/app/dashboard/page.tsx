@@ -1,10 +1,11 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserProfile, type UserProfile } from '@/hooks/use-user-profile';
 import { useAuth, useFirestore } from '@/firebase/provider';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc, collectionGroup, documentId } from 'firebase/firestore';
 import { StudentView } from '@/components/student-view';
 import { LecturerDashboard } from '@/components/lecturer-dashboard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -155,14 +156,20 @@ function DashboardContent({ user }: { user: UserProfile }) {
 
   // Effect for lecturers to fetch students for the selected unit
   useEffect(() => {
-    if (role !== 'lecturer' || !selectedUnit?.enrolledStudents) {
+    if (role !== 'lecturer' || !selectedUnitId) {
       setStudentsInUnit([]);
       return;
     }
-    getStudentsFromIds(firestore, selectedUnit.enrolledStudents).then(studentData => {
+
+    const studentsQuery = collection(firestore, `units/${selectedUnitId}/enrolledStudents`);
+    const unsubscribe = onSnapshot(studentsQuery, async (snapshot) => {
+        const studentIds = snapshot.docs.map(doc => doc.id);
+        const studentData = await getStudentsFromIds(firestore, studentIds);
         setStudentsInUnit(studentData);
     });
-  }, [role, selectedUnit, firestore]);
+    
+    return () => unsubscribe();
+  }, [role, selectedUnitId, firestore]);
   
   // Effect for lecturers to listen to attendance records for the selected unit
   useEffect(() => {
@@ -189,55 +196,82 @@ function DashboardContent({ user }: { user: UserProfile }) {
 
   // Effect for students to fetch units and their own attendance records
   useEffect(() => {
-      if (role !== 'student' || !user?.uid) return;
-      
-      setIsDataLoading(true);
-      setFetchError(null);
-      const unitsQuery = query(collection(firestore, "units"), where("enrolledStudents", "array-contains", user.uid));
-      
-      const unsubscribeUnits = onSnapshot(unitsQuery, async (unitsSnapshot) => {
-          const fetchedUnits = unitsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Unit));
+    if (role !== 'student' || !user?.uid) return;
 
-          if (fetchedUnits.length === 0) {
-              setStudentUnits([]);
-              setIsDataLoading(false);
-              return;
-          }
+    setIsDataLoading(true);
+    setFetchError(null);
+    
+    // This query finds all the 'enrollment' documents for the current student.
+    const enrollmentsQuery = query(collectionGroup(firestore, 'enrolledStudents'), where('studentId', '==', user.uid));
+    
+    const unsubscribeEnrollments = onSnapshot(enrollmentsQuery, async (enrollmentsSnapshot) => {
+        if (enrollmentsSnapshot.empty) {
+            setStudentUnits([]);
+            setIsDataLoading(false);
+            return;
+        }
 
-          const attendancePromises = fetchedUnits.map(unit => {
-              const attendanceQuery = query(
-                  collection(firestore, `units/${unit.id}/attendance`),
-                  where("studentId", "==", user.uid)
-              );
-              return getDocs(attendanceQuery);
-          });
-          
-          const attendanceSnapshots = await Promise.all(attendancePromises);
+        const unitIds = enrollmentsSnapshot.docs.map(doc => doc.ref.parent.parent!.id);
 
-          const unitsWithAttendance: UnitWithAttendance[] = fetchedUnits.map((unit, index) => {
-              const attendedSessionIds = new Set(
-                attendanceSnapshots[index].docs.map(doc => doc.data().sessionId)
-              );
-              return {
-                  ...unit,
-                  attendedSessionsCount: attendedSessionIds.size,
-              };
-          });
-          
-          setStudentUnits(unitsWithAttendance);
-          setIsDataLoading(false);
-          
-      }, (error) => {
-          console.error("Error fetching student units:", error);
-          if (auth.currentUser) {
-              toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your units.' });
-              setFetchError("Could not fetch your units. This may be a Firestore security rule issue.");
-          }
-          setIsDataLoading(false);
-      });
-  
-      return () => unsubscribeUnits();
-  }, [role, user?.uid, firestore, toast, auth]);
+        if (unitIds.length === 0) {
+            setStudentUnits([]);
+            setIsDataLoading(false);
+            return;
+        }
+
+        // Now fetch the actual unit documents for the IDs we found.
+        // We have to batch this in groups of 30 for Firestore 'in' query limitations.
+        const unitPromises = [];
+        for (let i = 0; i < unitIds.length; i += 30) {
+            const batchIds = unitIds.slice(i, i + 30);
+            const unitsQuery = query(collection(firestore, 'units'), where(documentId(), 'in', batchIds));
+            unitPromises.push(getDocs(unitsQuery));
+        }
+
+        try {
+            const unitSnapshots = await Promise.all(unitPromises);
+            const fetchedUnits: Unit[] = unitSnapshots.flatMap(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Unit)));
+
+            const attendancePromises = fetchedUnits.map(unit => {
+                const attendanceQuery = query(
+                    collection(firestore, `units/${unit.id}/attendance`),
+                    where("studentId", "==", user.uid)
+                );
+                return getDocs(attendanceQuery);
+            });
+
+            const attendanceSnapshots = await Promise.all(attendancePromises);
+
+            const unitsWithAttendance: UnitWithAttendance[] = fetchedUnits.map((unit, index) => {
+                const attendedSessionIds = new Set(attendanceSnapshots[index].docs.map(doc => doc.data().sessionId));
+                return {
+                    ...unit,
+                    attendedSessionsCount: attendedSessionIds.size,
+                };
+            });
+            
+            setStudentUnits(unitsWithAttendance);
+        } catch (error) {
+            console.error("Error fetching student units:", error);
+            if (auth.currentUser) {
+                toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your units.' });
+                setFetchError("Could not fetch your units. This may be a Firestore security rule issue.");
+            }
+        } finally {
+            setIsDataLoading(false);
+        }
+    }, (error) => {
+        console.error("Error fetching student enrollments:", error);
+        if (auth.currentUser) {
+            toast({ variant: 'destructive', title: 'Permissions Error', description: 'Could not fetch your enrollments.' });
+            setFetchError("Could not fetch your enrollments. This may be a Firestore security rule issue. An index might be required.");
+        }
+        setIsDataLoading(false);
+    });
+
+    return () => unsubscribeEnrollments();
+}, [role, user?.uid, firestore, toast, auth]);
+
 
   // Effect to manage unit statuses for students over time
   useEffect(() => {
