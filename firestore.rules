@@ -1,108 +1,63 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    function isUnitOwner(unitId) {
-      // Added exists() check for robustness against race conditions
-      return request.auth != null &&
-             exists(/databases/$(database)/documents/units/$(unitId)) &&
-             get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
-    }
 
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
     }
 
     match /units/{unitId} {
-      // READ: Explicitly allow 'get' and 'list' for any authenticated user.
-      // 'get' is needed for students to retrieve unit data after enrolling.
-      // 'list' is needed for lecturers to query their units and for students to find units by code.
-      // This is safe because sensitive data is in subcollections and queries are filtered in the app.
-      allow get: if request.auth != null;
-      allow list: if request.auth != null;
+      // READ: Allow any authenticated user to read public unit data.
+      // This is required for students to query units by code before enrolling.
+      allow read: if request.auth != null;
 
-      // CREATE: The creating user must set themselves as the lecturerId and initialize fields.
-      allow create: if request.auth != null
-                    && request.resource.data.lecturerId == request.auth.uid
-                    && request.resource.data.name is string
-                    && request.resource.data.code is string
-                    && request.resource.data.attendanceThreshold is number
-                    && request.resource.data.sessionHistory.size() == 0;
+      // CREATE: Only lecturers can create units.
+      allow create: if request.auth != null &&
+        request.resource.data.lecturerId == request.auth.uid;
 
-      // UPDATE: Only the owner (lecturer) can update the main unit document.
-      allow update: if isUnitOwner(unitId);
-        
-      // DELETE: Only the owner (lecturer) can delete.
-      allow delete: if isUnitOwner(unitId);
-      
-      // Subcollection for enrolled students
+      // UPDATE: Only the unit owner (lecturer) can update.
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
+
+      allow delete: if request.auth != null &&
+        get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
+
       match /enrolledStudents/{studentId} {
-        // READ: A user can read an enrollment doc if they are the lecturer of the unit, OR it is their own enrollment.
-        allow read: if isUnitOwner(unitId) || request.auth.uid == studentId;
-        
-        // LIST: Only the lecturer can list all enrollments for their unit.
-        allow list: if isUnitOwner(unitId);
-        
-        // CREATE: A user can only create an enrollment document for themselves,
-        // and the document body must contain their UID.
-        allow create: if request.auth.uid == studentId
-                      && request.resource.data.studentId == studentId;
-        
-        // DELETE: Only the lecturer can un-enroll a student.
-        allow delete: if isUnitOwner(unitId);
-      }
+        // Allow a user to read their own enrollment document.
+        allow get: if request.auth.uid == studentId;
+        // Allow a lecturer to read any enrollment document in their unit.
+        allow read: if get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
 
-      // Rules for the nested 'attendance' sub-collection
+        // Allow a user to enroll themselves.
+        allow create: if request.auth.uid == studentId;
+
+        // Only a lecturer can un-enroll a student.
+        allow delete: if get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
+      }
+      
       match /attendance/{attendanceId} {
-        
-        // GET: A lecturer can get any record in their unit. A student can get their own record.
-        allow get: if request.auth != null && (
-          isUnitOwner(unitId) ||
+        // READ: Allow if user is the lecturer of the unit OR it's their own record.
+        allow read: if request.auth != null && (
+          get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid ||
           (resource.data.studentId == request.auth.uid)
         );
-
-        // LIST: Lecturers can list all records. Students can list records ONLY if querying by their own studentId.
-        allow list: if request.auth != null &&
-                     (
-                       isUnitOwner(unitId) ||
-                       (
-                         request.query.where.size() > 0 &&
-                         request.query.where[0] == 'studentId' &&
-                         request.query.where[2] == request.auth.uid
-                       )
-                     );
-
-        // CREATE: Students can create a PENDING record for an ACTIVE session.
-        // Lecturers can manually add a record.
-        allow create: if (
-            // STUDENT condition
-            request.auth != null &&
-            request.resource.data.studentId == request.auth.uid &&
-            // Check enrollment
-            exists(/databases/$(database)/documents/units/$(unitId)/enrolledStudents/$(request.auth.uid)) &&
-            // Check session is active
-            request.resource.data.sessionId == get(/databases/$(database)/documents/units/$(unitId)).data.activeSessionId &&
-            // Check status is PENDING
-            request.resource.data.status == 'PENDING' &&
-            // NEW: Ensure the correct lecturerId is being written to the record
-            request.resource.data.lecturerId == get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId
-        ) || (
-            // LECTURER condition for manual sign-in
-            isUnitOwner(unitId) && 
-            request.resource.data.signInMethod == 'manual' &&
-            // NEW: Ensure the correct lecturerId is being written to the record
-            request.resource.data.lecturerId == request.auth.uid
+        
+        // CREATE: Allow if user is the lecturer OR an enrolled student.
+        allow create: if request.auth != null && (
+            ( // Student condition
+              exists(/databases/$(database)/documents/units/$(unitId)/enrolledStudents/$(request.auth.uid)) &&
+              request.resource.data.studentId == request.auth.uid
+            ) || 
+            ( // Lecturer condition
+              get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid
+            )
         );
-        
-        // UPDATE: Only the unit owner can update status.
-        allow update: if isUnitOwner(unitId) &&
-                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-                   resource.data.status == 'PENDING' &&
-                   request.resource.data.status in ['APPROVED', 'REJECTED'];
-        
-        // DELETE: Only the unit owner can delete.
-        allow delete: if isUnitOwner(unitId);
+
+        // Attendance records are immutable.
+        allow update, delete: if false;
       }
     }
   }

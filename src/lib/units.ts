@@ -48,7 +48,7 @@ export async function joinUnit(
 
     const unitDoc = querySnapshot.docs[0];
     const unitId = unitDoc.id;
-
+    
     const enrollmentRef = doc(db, `units/${unitId}/enrolledStudents`, studentId);
     const userRef = doc(db, 'users', studentId);
 

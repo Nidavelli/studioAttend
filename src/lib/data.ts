@@ -20,6 +20,7 @@ export type Unit = {
   sessionEndTime?: any | null; // Firestore Timestamp
   lecturerLocation?: { lat: number, lng: number };
   sessionRadius?: number;
+  // enrolledStudents array is removed for a more scalable model
 };
 
 export type AttendanceRecord = {

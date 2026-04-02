@@ -372,7 +372,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
         }
 
         try {
-            const newRecord: Partial<AttendanceRecord> = {
+            await addDoc(attendanceColRef, {
                 studentId,
                 registrationNumber,
                 sessionId,
@@ -382,15 +382,8 @@ function DashboardContent({ user }: { user: UserProfile }) {
                 deviceId,
                 status: 'PENDING',
                 deviceFlag: deviceWarning,
-            };
-            if (locationData) {
-                newRecord.location = {
-                    lat: locationData.lat,
-                    lng: locationData.lng,
-                    accuracy: locationData.accuracy || 0,
-                };
-            }
-            await addDoc(attendanceColRef, newRecord);
+                ...(locationData && { location: { lat: locationData.lat, lng: locationData.lng, accuracy: locationData.accuracy || 0 }})
+            });
             return { success: true, deviceWarning };
         } catch (e) {
             console.error("Error recording attendance:", e);
@@ -603,7 +596,7 @@ function DashboardContent({ user }: { user: UserProfile }) {
               students={studentsInUnit}
               unit={selectedUnit}
               attendanceRecords={attendanceRecords}
-              isSessionActive={sessionActive}
+              isSessionActive={isSessionActive}
               onToggleSession={toggleSession}
               sessionDuration={sessionDuration}
               setSessionDuration={setSessionDuration}
