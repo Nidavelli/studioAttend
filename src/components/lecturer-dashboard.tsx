@@ -13,7 +13,7 @@ import type { Student, Unit, AttendanceRecord } from '@/lib/data';
 import { getAvatarUrl } from '@/lib/avatars';
 import { AttendanceAnalytics } from '@/components/attendance-analytics';
 import { AttendanceReport } from '@/components/attendance-report';
-import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle, Trash2, Check, X, AlertTriangle, Settings } from 'lucide-react';
+import { Timer, QrCode, MapPin, Loader2, PlusCircle, CheckCircle, Trash2, Check, X, AlertTriangle, Settings, SlidersHorizontal, FileCheck2, BarChart3, Grid3x3 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import type { GeolocationCoordinates } from '@/app/dashboard/page';
@@ -389,16 +389,24 @@ export function LecturerDashboard({
     );
   }
 
+  const tabs = [
+    { value: 'session', label: 'Session Control', icon: SlidersHorizontal },
+    { value: 'review', label: 'Session Review', icon: FileCheck2 },
+    { value: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { value: 'grid', label: 'Attendance Grid', icon: Grid3x3 },
+    { value: 'management', label: 'Management', icon: Settings },
+  ]
 
   return (
     <div className="space-y-6 mt-4 md:mt-8">
     <Tabs defaultValue="session">
-        <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="session">Session Control</TabsTrigger>
-            <TabsTrigger value="review">Session Review</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-            <TabsTrigger value="grid">Attendance Grid</TabsTrigger>
-            <TabsTrigger value="management"><Settings className="h-4 w-4"/></TabsTrigger>
+        <TabsList className="grid w-full grid-cols-5 h-auto p-1 rounded-lg">
+            {tabs.map(tab => (
+              <TabsTrigger key={tab.value} value={tab.value} className="flex flex-col sm:flex-row gap-2 items-center h-full py-2.5">
+                  <tab.icon className="h-5 w-5" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+              </TabsTrigger>
+            ))}
         </TabsList>
         <TabsContent value="session" className="mt-6">
             <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">

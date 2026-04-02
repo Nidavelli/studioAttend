@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Moon, Sun, Menu } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { getAvatarUrl } from '@/lib/avatars';
 import {
@@ -28,7 +28,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from '@/lib/utils';
-
+import { motion } from 'framer-motion';
 
 function ThemeToggle() {
   const [theme, setTheme] = useState('light');
@@ -64,6 +64,30 @@ function ThemeToggle() {
   );
 }
 
+const AnimatedHamburgerIcon = ({ open }: { open: boolean }) => {
+  return (
+    <div className="relative h-5 w-5">
+      <motion.div
+        className="absolute h-0.5 w-full bg-foreground"
+        style={{ top: '20%' }}
+        animate={open ? { rotate: 45, y: 5 } : { rotate: 0, y: 0 }}
+        transition={{ duration: 0.3, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="absolute h-0.5 w-full bg-foreground"
+        style={{ top: '50%' }}
+        animate={open ? { opacity: 0 } : { opacity: 1 }}
+        transition={{ duration: 0.3, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="absolute h-0.5 w-full bg-foreground"
+        style={{ bottom: '20%' }}
+        animate={open ? { rotate: -45, y: -5 } : { rotate: 0, y: 0 }}
+        transition={{ duration: 0.3, ease: 'easeInOut' }}
+      />
+    </div>
+  )
+}
 
 export function Navbar() {
   const { user, loading } = useUserProfile();
@@ -77,8 +101,14 @@ export function Navbar() {
   }, []);
 
   const handleSignOut = async () => {
+    window.dispatchEvent(new CustomEvent('routeChangeStart'));
     await signOut(auth);
-    router.push('/');
+    // The loading state will handle the redirect feel
+  };
+
+  const handleLinkClick = () => {
+    window.dispatchEvent(new CustomEvent('routeChangeStart'));
+    setMobileMenuOpen(false);
   };
   
   const navLinks = [
@@ -87,10 +117,22 @@ export function Navbar() {
       { href: '/contact', label: 'Contact' },
   ];
 
+  const NavLink = ({ href, children }: { href: string, children: React.ReactNode }) => (
+    <Link href={href} onClick={handleLinkClick} className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+        {children}
+    </Link>
+  );
+
+  const MobileNavLink = ({ href, children }: { href: string, children: React.ReactNode }) => (
+    <Link href={href} onClick={handleLinkClick} className="text-lg font-medium text-foreground hover:text-primary transition-colors">
+        {children}
+    </Link>
+  );
+
   return (
     <header className="py-4 px-4 sm:px-6 lg:px-8 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
       <div className="container mx-auto flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
+        <Link href="/" onClick={handleLinkClick} className="flex items-center gap-3">
           <AttendSyncIcon className="h-8 w-8 text-primary" />
           <h1 className="text-2xl font-headline font-bold text-foreground">
             AttendSync
@@ -99,9 +141,9 @@ export function Navbar() {
 
         <nav className="hidden md:flex items-center gap-6">
             {navLinks.map(link => (
-                <Link key={link.href} href={link.href} className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+                <NavLink key={link.href} href={link.href}>
                     {link.label}
-                </Link>
+                </NavLink>
             ))}
         </nav>
 
@@ -141,10 +183,10 @@ export function Navbar() {
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                      <DropdownMenuItem asChild>
-                      <Link href="/dashboard">Dashboard</Link>
+                      <Link href="/dashboard" onClick={handleLinkClick}>Dashboard</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                    <Link href="/profile">Profile</Link>
+                    <Link href="/profile" onClick={handleLinkClick}>Profile</Link>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleSignOut}>
@@ -154,7 +196,7 @@ export function Navbar() {
                 </DropdownMenu>
             ) : (
                 <Button asChild>
-                    <Link href="/auth">Login / Sign Up</Link>
+                    <Link href="/auth" onClick={handleLinkClick}>Login / Sign Up</Link>
                 </Button>
             )}
           </div>
@@ -164,7 +206,8 @@ export function Navbar() {
               <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                   <SheetTrigger asChild>
                       <Button variant="ghost" size="icon">
-                          <Menu />
+                          <AnimatedHamburgerIcon open={mobileMenuOpen} />
+                          <span className="sr-only">Open menu</span>
                       </Button>
                   </SheetTrigger>
                   <SheetContent side="right">
@@ -173,20 +216,20 @@ export function Navbar() {
                       </SheetHeader>
                       <div className="flex flex-col gap-6 pt-10">
                           {navLinks.map(link => (
-                              <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground hover:text-primary transition-colors">
+                              <MobileNavLink key={link.href} href={link.href}>
                                   {link.label}
-                              </Link>
+                              </MobileNavLink>
                           ))}
                            <div className="border-t pt-6">
                             {user ? (
                                 <div className="space-y-4">
-                                     <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)} className="block text-lg font-medium text-foreground hover:text-primary transition-colors">Dashboard</Link>
-                                     <Link href="/profile" onClick={() => setMobileMenuOpen(false)} className="block text-lg font-medium text-foreground hover:text-primary transition-colors">Profile</Link>
+                                     <MobileNavLink href="/dashboard">Dashboard</MobileNavLink>
+                                     <MobileNavLink href="/profile">Profile</MobileNavLink>
                                      <Button onClick={handleSignOut} className="w-full">Sign Out</Button>
                                 </div>
                             ) : (
                                 <Button asChild className="w-full">
-                                    <Link href="/auth" onClick={() => setMobileMenuOpen(false)}>Login / Sign Up</Link>
+                                    <Link href="/auth" onClick={handleLinkClick}>Login / Sign Up</Link>
                                 </Button>
                             )}
                            </div>

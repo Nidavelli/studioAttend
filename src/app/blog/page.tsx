@@ -1,10 +1,12 @@
+'use client';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Search, Mail, Send } from 'lucide-react';
+import { Search, Mail, Send, ArrowLeft } from 'lucide-react';
+import { useUserProfile } from '@/hooks/use-user-profile';
 
 const blogPosts = [
   {
@@ -76,9 +78,36 @@ const faqItems = [
   },
 ];
 
+const DashboardLink = () => {
+  const { user } = useUserProfile();
+
+  if (!user) {
+    return null;
+  }
+
+  const handleLinkClick = () => {
+    window.dispatchEvent(new CustomEvent('routeChangeStart'));
+  };
+
+  return (
+    <div className="bg-muted border-b">
+        <div className="container mx-auto px-4">
+            <Button asChild variant="link" className="pl-0 text-muted-foreground">
+                <Link href="/dashboard" onClick={handleLinkClick}>
+                    <ArrowLeft className="mr-2" />
+                    Back to Dashboard
+                </Link>
+            </Button>
+        </div>
+    </div>
+  );
+};
+
+
 export default function BlogPage() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      <DashboardLink />
       <main className="flex-1">
         {/* Hero Section */}
         <section className="bg-muted py-20 md:py-32">
