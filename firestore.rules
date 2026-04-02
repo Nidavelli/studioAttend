@@ -62,8 +62,16 @@ service cloud.firestore {
           (resource.data.studentId == request.auth.uid)
         );
 
-        // LIST: Only the owner of the unit can list all attendance records.
-        allow list: if request.auth != null && isUnitOwner(unitId);
+        // LIST: Lecturers can list all records. Students can list records ONLY if querying by their own studentId.
+        allow list: if request.auth != null &&
+                     (
+                       isUnitOwner(unitId) ||
+                       (
+                         request.query.where.size() > 0 &&
+                         request.query.where[0] == 'studentId' &&
+                         request.query.where[2] == request.auth.uid
+                       )
+                     );
 
         // CREATE: Students can create a PENDING record for an ACTIVE session.
         // Lecturers can manually add a record.
