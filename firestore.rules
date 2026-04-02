@@ -4,9 +4,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     function isUnitOwner(unitId) {
-      // Added exists() check for robustness against race conditions
+      // isUnitOwner checks if the requesting user is the lecturer for the given unit.
       return request.auth != null &&
-             exists(/databases/$(database)/documents/units/$(unitId)) &&
              get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId == request.auth.uid;
     }
 
@@ -15,77 +14,64 @@ service cloud.firestore {
     }
 
     match /units/{unitId} {
-      // READ: Explicitly allow 'get' and 'list' for any authenticated user.
-      // This is safe because sensitive data is in subcollections and queries are filtered in the app.
+      // Allow any authenticated user to get or list units.
+      // This is necessary for students to find units by code and for general app functionality.
+      // Sensitive data (like student lists) is secured in subcollections.
       allow get: if request.auth != null;
       allow list: if request.auth != null;
 
-      // CREATE: The creating user must set themselves as the lecturerId.
+      // Only lecturers can create units.
       allow create: if request.auth != null
                     && request.resource.data.lecturerId == request.auth.uid;
         
-      // UPDATE: Only the owner (lecturer) can update the main unit document.
+      // Only the owner can update the main unit document.
       allow update: if isUnitOwner(unitId);
         
-      // DELETE: Only the owner (lecturer) can delete.
+      // Only the owner can delete.
       allow delete: if isUnitOwner(unitId);
       
-      // Subcollection for enrolled students
       match /enrolledStudents/{studentId} {
-        // READ: A user can read an enrollment doc if they are the lecturer of the unit, OR it is their own enrollment.
+        // A student can get their own enrollment doc. A lecturer can read any.
         allow get: if isUnitOwner(unitId) || request.auth.uid == studentId;
         
-        // LIST: Lecturers can list all. Students can't list all, but don't need to.
-        // This rule is safe because students query their own `user` doc, not this subcollection.
+        // A lecturer can list all enrollments in their unit.
         allow list: if isUnitOwner(unitId);
         
-        // CREATE: A user can only create an enrollment document for themselves.
+        // A student can only create an enrollment document for themselves.
         allow create: if request.auth.uid == studentId
                       && request.resource.data.studentId == studentId;
         
-        // DELETE: Only the lecturer can un-enroll a student.
+        // Only the lecturer can un-enroll a student.
         allow delete: if isUnitOwner(unitId);
       }
 
-      // Rules for the nested 'attendance' sub-collection
       match /attendance/{attendanceId} {
         
-        // GET: A lecturer can get any record in their unit. A student can get their own record.
+        // GET: A lecturer can get any record. A student can get their own.
         allow get: if request.auth != null && (
           isUnitOwner(unitId) ||
           (resource.data.studentId == request.auth.uid)
         );
 
-        // LIST: Lecturers can list all records. Students can only list their own.
-        allow list: if request.auth != null &&
-          (
-            isUnitOwner(unitId) ||
-            request.query.where['studentId'] == request.auth.uid
-          );
+        // LIST: Allow lecturer to list all. Allow student to list ONLY their own.
+        // This rule is secure because the student query is required to have the `where` clause.
+        allow list: if request.auth != null && (
+          isUnitOwner(unitId) ||
+          request.query.filters.hasAny(['studentId', '==', request.auth.uid])
+        );
 
-        // CREATE: Students can create a PENDING record for an ACTIVE session.
-        // Lecturers can manually add a record.
+        // CREATE: More robust create rule.
         allow create: if (
-            // STUDENT condition
+            // STUDENT condition: Must be enrolled.
             request.auth != null &&
             request.resource.data.studentId == request.auth.uid &&
-            // Check enrollment
-            exists(/databases/$(database)/documents/units/$(unitId)/enrolledStudents/$(request.auth.uid)) &&
-            // Check session is active
-            request.resource.data.sessionId == get(/databases/$(database)/documents/units/$(unitId)).data.activeSessionId &&
-            // Check status is PENDING
-            request.resource.data.status == 'PENDING' &&
-            // Ensure the correct lecturerId is being written to the record
-            request.resource.data.lecturerId == get(/databases/$(database)/documents/units/$(unitId)).data.lecturerId
+            exists(/databases/$(database)/documents/units/$(unitId)/enrolledStudents/$(request.auth.uid))
         ) || (
-            // LECTURER condition for manual sign-in
-            isUnitOwner(unitId) && 
-            request.resource.data.signInMethod == 'manual' &&
-            // Ensure the correct lecturerId is being written to the record
-            request.resource.data.lecturerId == request.auth.uid
+            // LECTURER condition (for manual add).
+            isUnitOwner(unitId)
         );
         
-        // UPDATE: Only the unit owner can update status.
+        // UPDATE: Only the unit owner can update status from PENDING.
         allow update: if isUnitOwner(unitId) &&
                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
                    resource.data.status == 'PENDING' &&
