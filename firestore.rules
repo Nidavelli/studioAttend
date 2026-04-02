@@ -50,7 +50,12 @@ service cloud.firestore {
       match /attendance/{attendanceId} {
         
         // READ: A lecturer can read any record in their unit. A student can only read their own record.
-        allow read: if request.auth != null && (isUnitOwner(unitId) || resource.data.studentId == request.auth.uid);
+        // This rule is now safe for queries on empty collections.
+        allow read: if request.auth != null && 
+                     (
+                       isUnitOwner(unitId) || 
+                       (resource != null && resource.data.studentId == request.auth.uid)
+                     );
 
         // CREATE: Students can create a PENDING record for an ACTIVE session.
         // Lecturers can manually add a record.
