@@ -15,8 +15,6 @@ service cloud.firestore {
 
     match /units/{unitId} {
       // READ: Any authenticated user can read the public unit data (name, code, etc.).
-      // This is safe because the sensitive enrolled student list is now in a subcollection.
-      // This allows students to query for units by code before they have enrolled.
       allow read: if request.auth != null;
 
       // CREATE: The creating user must set themselves as the lecturerId and initialize fields.
@@ -41,8 +39,10 @@ service cloud.firestore {
         // LIST: Only the lecturer can list all enrollments for their unit.
         allow list: if isUnitOwner(unitId);
         
-        // CREATE: A user can only create an enrollment document for themselves.
-        allow create: if request.auth.uid == studentId;
+        // CREATE: A user can only create an enrollment document for themselves,
+        // and the document body must contain their UID.
+        allow create: if request.auth.uid == studentId
+                      && request.resource.data.studentId == studentId;
         
         // DELETE: Only the lecturer can un-enroll a student.
         allow delete: if isUnitOwner(unitId);

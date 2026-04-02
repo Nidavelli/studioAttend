@@ -49,21 +49,29 @@ export async function joinUnit(
     const unitDoc = querySnapshot.docs[0];
     const unitId = unitDoc.id;
 
+    // Use setDoc with the student's UID as the document ID.
     const enrollmentRef = doc(db, `units/${unitId}/enrolledStudents`, studentId);
-    const enrollmentSnap = await getDoc(enrollmentRef);
-
-    if (enrollmentSnap.exists()) {
-        throw new Error("You are already enrolled in this unit.");
-    }
     
-    await setDoc(enrollmentRef, {
-        studentId: studentId,
-        enrolledAt: serverTimestamp()
+    // Use a transaction to check for existence and write atomically.
+    await runTransaction(db, async (transaction) => {
+        const enrollmentSnap = await transaction.get(enrollmentRef);
+
+        if (enrollmentSnap.exists()) {
+            throw new Error("You are already enrolled in this unit.");
+        }
+
+        // The document ID is already the studentId from the path,
+        // but storing it in the document is good practice for collectionGroup queries.
+        transaction.set(enrollmentRef, {
+            studentId: studentId,
+            enrolledAt: serverTimestamp()
+        });
     });
 
     return { success: true };
   } catch (error: any)
   {
+    console.error("Error joining unit:", error);
     return { success: false, error: error.message || "Failed to join unit." };
   }
 }
