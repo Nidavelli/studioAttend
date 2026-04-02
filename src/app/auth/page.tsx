@@ -235,8 +235,8 @@ function AuthPageContent() {
         createdAt: serverTimestamp(),
       });
 
-      // No need to call user.reload() or handleSignUpSuccess here,
-      // the useUserProfile hook will automatically detect the new user and redirect.
+      // The useUserProfile hook will automatically detect the new user and trigger the redirect useEffect.
+      // No need to call handleSignUpSuccess here.
     } catch (error) {
         console.error("Error saving user profile:", error);
         toast({
@@ -250,7 +250,7 @@ function AuthPageContent() {
 
 
   if (userLoading || isLoading || (!userLoading && user)) {
-    return <LoadingScreen text={userLoading ? "Checking session..." : "Setting things up..."}/>;
+    return <LoadingScreen text={isLoading ? "Setting things up..." : "Checking session..."}/>;
   }
 
   return (
@@ -463,9 +463,7 @@ function AuthPageContent() {
 }
 
 export default function AuthPage() {
-    return (
-        <Suspense fallback={<LoadingScreen text="Loading..." />}>
-            <AuthPageContent />
-        </Suspense>
-    )
+    // By removing the Suspense wrapper, we ensure this component and its children
+    // are rendered fully on the client, where the loading screen's animations can run.
+    return <AuthPageContent />;
 }

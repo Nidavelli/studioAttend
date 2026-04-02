@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUserProfile } from '@/hooks/use-user-profile';
+import { useUserProfile, type UserProfile } from '@/hooks/use-user-profile';
 import { useAuth, useFirestore } from '@/firebase/provider';
 import { doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp, updateDoc, Timestamp, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { StudentView } from '@/components/student-view';
@@ -58,13 +58,12 @@ async function getStudentsFromIds(firestore: any, studentIds: string[]): Promise
   return students;
 }
 
-function DashboardContent() {
-  const { user, loading: userLoading } = useUserProfile();
+function DashboardContent({ user }: { user: UserProfile }) {
   const firestore = useFirestore();
   const auth = useAuth();
   const { toast } = useToast();
 
-  const role = user?.role;
+  const role = user.role;
 
   const [units, setUnits] = useState<Unit[]>([]);
   const [studentUnits, setStudentUnits] = useState<UnitWithAttendance[]>([]);
@@ -572,7 +571,7 @@ function DashboardContent() {
           </Alert>
         )}
 
-          {role === 'student' && user && (
+          {role === 'student' && (
             <StudentView
               units={studentUnits}
               unitStatuses={unitStatuses}
@@ -583,7 +582,7 @@ function DashboardContent() {
             />
           )}
 
-          {role === 'lecturer' && user && (
+          {role === 'lecturer' && (
             <LecturerDashboard
               lecturer={user}
               allUnits={units}
@@ -624,5 +623,5 @@ export default function Home() {
     if (loading || !user) {
       return <LoadingScreen text="Verifying authentication..." />;
     }
-    return <DashboardContent />;
+    return <DashboardContent user={user} />;
 }
