@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   signInWithEmailAndPassword,
@@ -112,7 +112,7 @@ const PasswordStrengthMeter = ({ password }: { password?: string }) => {
     );
 };
 
-export default function AuthPage() {
+function AuthPageContent() {
   const auth = useAuth();
   const { user, loading: userLoading } = useUserProfile();
   const firestore = useFirestore();
@@ -457,4 +457,13 @@ export default function AuthPage() {
       </Card>
     </div>
   );
+}
+
+
+export default function AuthPage() {
+  return (
+    <Suspense>
+      <AuthPageContent />
+    </Suspense>
+  )
 }
